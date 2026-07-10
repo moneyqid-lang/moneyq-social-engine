@@ -7,7 +7,7 @@
     "start": "node src/index.js",
     "generate": "node src/orchestrator.js",
     "publish": "node src/publishers/dispatch.js",
-    "test": "node --test src/**/*.test.js",
+    "test": "node --experimental-test-module-mocks --test src/**/*.test.js",
     "lint": "eslint src/"
   },
   "dependencies": {
