@@ -97,7 +97,7 @@ export async function run(dateStr, targetPlatforms) {
       const publishContent = `${copy.body}\n\n${copy.hashtags.map(h => '#' + h).join(' ')}`;
 
       // --- Step 7: Publish ---
-      const publisher = await getPublisher('instagram');
+      const publisher = await getPublisher(platform);
       const result = await publisher.publishToInstagram(mediaUrls[0], publishContent);
       console.log(`  ✅ Published: ${result.permalink}`);
 
@@ -124,6 +124,15 @@ export async function run(dateStr, targetPlatforms) {
       });
     } catch (err) {
       console.log(`  💥 Error on ${platform}: ${err.message}`);
+      try {
+        await db.insertContentHistory({
+          platform,
+          contentJson: { error: err.message },
+          status: 'failed',
+        });
+      } catch (dbErr) {
+        console.error(`  Failed to record failure: ${dbErr.message}`);
+      }
       results.push({ platform, status: 'error', error: err.message });
     }
   }
