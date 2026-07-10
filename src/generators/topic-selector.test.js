@@ -22,16 +22,19 @@ mock.module(dbPath, { namedExports: { db: mockDb } });
 describe('Topic Selector', () => {
   let selectTopic;
   let resetLastPillars;
+  let resetLastAngles;
 
   before(async () => {
     const mod = await import('./topic-selector.js');
     selectTopic = mod.selectTopic;
     resetLastPillars = mod._resetLastPillars;
+    resetLastAngles = mod._resetLastAngles;
   });
 
   beforeEach(() => {
     mockCalendarEntries = [];
     if (resetLastPillars) resetLastPillars();
+    if (resetLastAngles) resetLastAngles();
   });
 
   it('returns a calendar entry when pending entries exist for the platform', async () => {
@@ -42,6 +45,7 @@ describe('Topic Selector', () => {
         pillar: 'tips_hemat',
         angle: 'langganan-tersembunyi',
         platforms: ['instagram', 'tiktok'],
+        status: 'pending',
       },
     ];
 
@@ -70,7 +74,7 @@ describe('Topic Selector', () => {
 
   it('filters out entries that do not target the requested platform and falls back', async () => {
     mockCalendarEntries = [
-      { id: '1', topic: 'Test', pillar: 'tips_hemat', angle: 'test', platforms: ['tiktok'] },
+      { id: '1', topic: 'Test', pillar: 'tips_hemat', angle: 'test', platforms: ['tiktok'], status: 'pending' },
     ];
 
     const result = await selectTopic('2026-07-13', 'instagram');
@@ -82,7 +86,7 @@ describe('Topic Selector', () => {
 
   it('passes the correct date and limit to getCalendarEntries', async () => {
     mockCalendarEntries = [
-      { id: 'uuid-1', topic: 'Test', pillar: 'tips_hemat', angle: 'test', platforms: ['instagram'] },
+      { id: 'uuid-1', topic: 'Test', pillar: 'tips_hemat', angle: 'test', platforms: ['instagram'], status: 'pending' },
     ];
 
     await selectTopic('2026-07-13', 'instagram');
@@ -178,8 +182,8 @@ describe('Topic Selector', () => {
 
   it('prefers earlier entries when multiple calendar entries exist for the same date', async () => {
     mockCalendarEntries = [
-      { id: 'first', topic: 'First Entry', pillar: 'tips_hemat', angle: 'kopi-daily', platforms: ['instagram'] },
-      { id: 'second', topic: 'Second Entry', pillar: 'edukasi_siklus', angle: 'definisi-siklus', platforms: ['instagram'] },
+      { id: 'first', topic: 'First Entry', pillar: 'tips_hemat', angle: 'kopi-daily', platforms: ['instagram'], status: 'pending' },
+      { id: 'second', topic: 'Second Entry', pillar: 'edukasi_siklus', angle: 'definisi-siklus', platforms: ['instagram'], status: 'pending' },
     ];
 
     const result = await selectTopic('2026-07-13', 'instagram');
@@ -197,10 +201,55 @@ describe('Topic Selector', () => {
 
     // Second call: calendar entry
     mockCalendarEntries = [
-      { id: 'cal-entry', topic: 'Calendar', pillar: fallback.pillar, angle: 'test', platforms: ['instagram'] },
+      { id: 'cal-entry', topic: 'Calendar', pillar: fallback.pillar, angle: 'test', platforms: ['instagram'], status: 'pending' },
     ];
     const calendar = await selectTopic('2026-07-14', 'instagram');
     assert.strictEqual(calendar.fromCalendar, true);
     assert.strictEqual(calendar.id, 'cal-entry');
+  });
+
+  it('filters out entries that are not pending and falls back', async () => {
+    mockCalendarEntries = [
+      { id: '1', topic: 'Completed', pillar: 'tips_hemat', angle: 'kopi-daily', platforms: ['instagram'], status: 'completed' },
+      { id: '2', topic: 'Draft', pillar: 'edukasi_siklus', angle: 'definisi-siklus', platforms: ['instagram'], status: 'draft' },
+    ];
+
+    const result = await selectTopic('2026-07-13', 'instagram');
+
+    assert.strictEqual(result.fromCalendar, false);
+    assert.strictEqual(result.id, null);
+  });
+
+  it('skips calendar entries whose angle was recently used and picks the next', async () => {
+    // First call: picks entry with angle 'langganan-tersembunyi'
+    mockCalendarEntries = [
+      { id: '1', topic: 'First', pillar: 'tips_hemat', angle: 'langganan-tersembunyi', platforms: ['instagram'], status: 'pending' },
+    ];
+    const r1 = await selectTopic('2026-07-13', 'instagram');
+    assert.strictEqual(r1.id, '1');
+
+    // Second call: first entry has angle in lastAngles -> skip to second entry
+    mockCalendarEntries = [
+      { id: '2', topic: 'Skpped', pillar: 'tips_hemat', angle: 'langganan-tersembunyi', platforms: ['instagram'], status: 'pending' },
+      { id: '3', topic: 'Picked', pillar: 'edukasi_siklus', angle: 'definisi-siklus', platforms: ['instagram'], status: 'pending' },
+    ];
+    const r2 = await selectTopic('2026-07-14', 'instagram');
+    assert.strictEqual(r2.id, '3');
+  });
+
+  it('resets angle tracking and uses the first entry when all entries have been deduped', async () => {
+    // First call: use entry with angle 'langganan-tersembunyi'
+    mockCalendarEntries = [
+      { id: '1', topic: 'First', pillar: 'tips_hemat', angle: 'langganan-tersembunyi', platforms: ['instagram'], status: 'pending' },
+    ];
+    const r1 = await selectTopic('2026-07-13', 'instagram');
+    assert.strictEqual(r1.id, '1');
+
+    // Second call: both entries have the used angle -> should reset and pick the first
+    mockCalendarEntries = [
+      { id: '2', topic: 'Only option', pillar: 'tips_hemat', angle: 'langganan-tersembunyi', platforms: ['instagram'], status: 'pending' },
+    ];
+    const r2 = await selectTopic('2026-07-14', 'instagram');
+    assert.strictEqual(r2.id, '2');
   });
 });
