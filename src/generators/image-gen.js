@@ -4,13 +4,12 @@ import { supabase } from '../db.js';
 import sharp from 'sharp';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 const OUTPUT_DIR = join(process.cwd(), 'output', 'images');
 
 /**
  * Generate an Instagram-ready image with AI + text overlay.
- * @returns {Promise<{imagePath: string, imageUrl: string}>}
+ * @returns {Promise<{imagePath: string, imageUrl: string | null}>}
  */
 export async function generateImage(copy, topic) {
   await mkdir(OUTPUT_DIR, { recursive: true });
@@ -22,22 +21,30 @@ export async function generateImage(copy, topic) {
     imageBuffer = await generateWithStableDiffusion(copy, topic);
     console.log('  🎨 Image generated via Stable Diffusion');
   } catch (err) {
-    console.log(`  ⚠️ SD failed: ${err.message}, trying fallback...`);
-    // 2. Fallback: static template with text
-    imageBuffer = await generateStaticTemplate(copy, topic);
+    console.log(`  ⚠️ SD failed: ${err.message}, trying Gemini fallback...`);
+    // 2. Try Gemini image generation
+    try {
+      imageBuffer = await generateWithGemini(copy, topic);
+      console.log('  🎨 Image generated via Gemini');
+    } catch (err2) {
+      console.log(`  ⚠️ Gemini failed: ${err2.message}, using static fallback...`);
+      // 3. Fallback: static template with text
+      imageBuffer = await generateStaticTemplate(copy, topic);
+    }
   }
 
-  // 3. Overlay hook text + watermark
+  // 4. Overlay hook text + watermark
   const finalBuffer = await overlayText(imageBuffer, copy.hook);
 
-  // 4. Save locally
-  const filename = `moneyq-${topic.pillar}-${Date.now()}.jpg`;
+  // 5. Save locally
+  const pillar = (topic?.pillar || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `moneyq-${pillar}-${Date.now()}.jpg`;
   const localPath = join(OUTPUT_DIR, filename);
   await writeFile(localPath, finalBuffer);
 
-  // 5. Upload to Supabase Storage
+  // 6. Upload to Supabase Storage
   const storagePath = `social-media/${filename}`;
-  const { data: uploadData, error: uploadError } = await supabase
+  const { error: uploadError } = await supabase
     .storage
     .from('content')
     .upload(storagePath, finalBuffer, {
@@ -66,20 +73,75 @@ async function generateWithStableDiffusion(copy, topic) {
     professional but friendly, suitable for Instagram post, 1080x1080 square format,
     no text in the image, abstract financial concepts, gradient background`;
 
-  const res = await fetch(
-    `https://api-inference.huggingface.co/models/${config.huggingface.model}`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.huggingface.apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ inputs: prompt, parameters: { negative_prompt: 'text, watermark, low quality' } }),
-    }
-  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
-  if (!res.ok) throw new Error(`HF HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  try {
+    const res = await fetch(
+      `https://api-inference.huggingface.co/models/${config.huggingface.model}`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.huggingface.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ inputs: prompt, parameters: { negative_prompt: 'text, watermark, low quality' } }),
+        signal: controller.signal,
+      }
+    );
+
+    if (!res.ok) throw new Error(`HF HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function generateWithGemini(copy, topic) {
+  if (!config.gemini?.apiKey) throw new Error('Gemini API key not configured');
+
+  const prompt = `Create a modern clean financial illustration with an Indonesian context, ${topic.topic}.
+    Use a green and white color scheme (#22c55e primary), minimalist flat design,
+    professional but friendly, suitable for Instagram post, 1080x1080 square format,
+    no text in the image, abstract financial concepts, gradient background.`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${config.gemini.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }],
+          }],
+          generationConfig: {
+            responseModalities: ['IMAGE', 'TEXT'],
+          },
+        }),
+        signal: controller.signal,
+      }
+    );
+
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Gemini HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const candidate = data.candidates?.[0];
+    if (!candidate) throw new Error('No candidates returned from Gemini');
+
+    const imagePart = candidate.content?.parts?.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart?.inlineData?.data) throw new Error('No image data in Gemini response');
+
+    return Buffer.from(imagePart.inlineData.data, 'base64');
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function generateStaticTemplate(copy, topic) {
