@@ -65,6 +65,12 @@ async function waitForProcessing(containerId, accessToken) {
     const res = await fetch(
       `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${accessToken}`
     );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+      throw new Error(`IG processing status check failed: ${err.error?.message || res.status}`);
+    }
+
     const data = await res.json();
 
     if (data.status_code === 'FINISHED') return;
