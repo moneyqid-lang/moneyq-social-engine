@@ -25,9 +25,14 @@ async function getPublisher(platform) {
         publishers[platform] = await import('./publishers/instagram.js');
         break;
       case 'tiktok':
+        publishers[platform] = await import('./publishers/tiktok.js');
+        break;
       case 'threads':
+        publishers[platform] = await import('./publishers/threads.js');
+        break;
       case 'youtube':
-        throw new Error(`${platform} publisher not yet implemented`);
+        publishers[platform] = await import('./publishers/youtube.js');
+        break;
       default:
         throw new Error(`Unknown platform: ${platform}`);
     }
@@ -47,7 +52,7 @@ async function getPublisher(platform) {
  */
 export async function run(dateStr, targetPlatforms) {
   const today = dateStr || new Date().toISOString().split('T')[0];
-  const platforms = targetPlatforms || ['instagram'];
+  const platforms = targetPlatforms || ['instagram', 'threads', 'tiktok', 'youtube'];
   const results = [];
 
   console.log(`\n🚀 MoneyQ Social Engine — ${today}`);
@@ -79,37 +84,60 @@ export async function run(dateStr, targetPlatforms) {
       }
 
       // --- Step 4: Generate media ---
-      // MVP only supports Instagram; TikTok/YouTube video generation added later
-      if (platform !== 'instagram') {
-        console.log(`  ⏭️ ${platform} publishing coming in a future task -- skipping`);
-        results.push({ platform, status: 'skipped', error: 'Not yet implemented' });
-        continue;
+      const publishContent = `${copy.body}\n\n${copy.hashtags.map(h => '#' + h).join(' ')}`;
+      let mediaUrls = [];
+      let result;
+
+      const publisher = await getPublisher(platform);
+
+      if (platform === 'instagram') {
+        // Instagram: generate image → compress → publish
+        const imageResult = await generateImage(copy, topic);
+        const mediaPath = await compressImage(imageResult.imagePath);
+        mediaUrls = [imageResult.imageUrl || imageResult.imagePath];
+        console.log(`  🖼️ Image ready: ${mediaPath}`);
+
+        result = await publisher.publishToInstagram(mediaUrls[0], publishContent);
+      } else if (platform === 'threads') {
+        // Threads: text-based post (optionally with image)
+        const imageResult = await generateImage(copy, topic);
+        if (imageResult?.imageUrl) {
+          result = await publisher.publishToThreadsWithImage(imageResult.imageUrl, publishContent);
+          mediaUrls = [imageResult.imageUrl];
+        } else {
+          result = await publisher.publishToThreads(publishContent);
+        }
+      } else if (platform === 'tiktok' || platform === 'youtube') {
+        // Video platforms: generate video → publish
+        const { generateVideo } = await import('./generators/video-gen.js');
+        const videoPath = await generateVideo(copy, topic, 'daily');
+        console.log(`  🎥 Video ready: ${videoPath}`);
+        mediaUrls = [videoPath];
+
+        if (platform === 'tiktok') {
+          result = await publisher.publishToTikTok(videoPath, publishContent);
+        } else {
+          result = await publisher.publishToYouTube(
+            videoPath,
+            copy.hook.slice(0, 100),
+            publishContent,
+            copy.hashtags.slice(0, 5)
+          );
+        }
       }
 
-      const imageResult = await generateImage(copy, topic);
-
-      // --- Step 5: Compress image ---
-      const mediaPath = await compressImage(imageResult.imagePath);
-      const mediaUrls = [imageResult.imageUrl || imageResult.imagePath];
-      console.log(`  🖼️ Image ready: ${mediaPath}`);
-
-      // --- Step 6: Build final content ---
-      const publishContent = `${copy.body}\n\n${copy.hashtags.map(h => '#' + h).join(' ')}`;
-
-      // --- Step 7: Publish ---
-      const publisher = await getPublisher(platform);
-      const result = await publisher.publishToInstagram(mediaUrls[0], publishContent);
-      console.log(`  ✅ Published: ${result.permalink}`);
+      console.log(`  ✅ Published: ${result?.permalink || 'manual upload required'}`);
 
       // --- Step 8: Record history ---
+      const isManualUpload = result?.manualUpload === true;
       await db.insertContentHistory({
         calendarId: topic.id,
         platform,
-        postId: result.postId,
+        postId: result?.postId,
         contentJson: { ...copy, topic: topic.topic },
         mediaUrls,
-        publishedAt: new Date().toISOString(),
-        status: 'published',
+        publishedAt: isManualUpload ? null : new Date().toISOString(),
+        status: isManualUpload ? 'generated' : 'published',
       });
 
       if (topic.id) {
