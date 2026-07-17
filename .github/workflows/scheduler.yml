@@ -83,9 +83,9 @@ jobs:
             echo "platforms=youtube" >> $GITHUB_OUTPUT
             echo "📋 YouTube slot (UTC $CURRENT_UTC)"
           else
-            # Instagram + Threads
-            echo "platforms=instagram,threads" >> $GITHUB_OUTPUT
-            echo "📋 IG+Threads slot (UTC $CURRENT_UTC)"
+            # Instagram only (Threads account suspended — waiting for appeal)
+            echo "platforms=instagram" >> $GITHUB_OUTPUT
+            echo "📋 Instagram slot (UTC $CURRENT_UTC)"
           fi
 
       - name: Run Social Engine
