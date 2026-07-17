@@ -7,6 +7,7 @@
     "start": "node src/index.js",
     "generate": "node src/orchestrator.js",
     "publish": "node src/publishers/dispatch.js",
+    "dashboard": "node dashboard/server.js",
     "test": "node --experimental-test-module-mocks --test src/**/*.test.js",
     "lint": "eslint src/"
   },
@@ -16,9 +17,10 @@
     "dotenv": "^16.4.5",
     "edge-tts": "^1.0.1",
     "ffmpeg-static": "^5.2.0",
+    "msedge-tts": "^2.0.7",
     "node-fetch": "^3.3.2",
-    "sharp": "^0.33.5",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "eslint": "^9.9.0"

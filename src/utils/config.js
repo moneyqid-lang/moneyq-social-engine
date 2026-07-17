@@ -42,6 +42,19 @@ export const config = {
   pexels: {
     apiKey: process.env.PEXELS_API_KEY || null,
   },
+  seedance: {
+    apiKey: process.env.SEEDANCE_API_KEY || null,
+    baseUrl: 'https://api.seedance2.ai',
+    model: 'seedance-2-0-mini',
+    resolution: '480p',
+    duration: 12,
+    aspectRatio: '9:16',
+    dailyBudget: 72, // 2 videos × 36 credits
+  },
+  vidu: {
+    apiKey: process.env.VIDU_API_KEY || null,
+    baseUrl: process.env.VIDU_API_BASE_URL || 'https://api.vidu.com',
+  },
   supabase: {
     url: process.env.SUPABASE_URL,
     anonKey: process.env.SUPABASE_ANON_KEY,
@@ -59,6 +72,10 @@ export const config = {
       clientId: process.env.YOUTUBE_CLIENT_ID || null,
       clientSecret: process.env.YOUTUBE_CLIENT_SECRET || null,
       refreshToken: process.env.YOUTUBE_REFRESH_TOKEN || null,
+    },
+    threads: {
+      accessToken: process.env.THREADS_ACCESS_TOKEN || null,
+      userId: process.env.THREADS_USER_ID || null,
     },
   },
   app: {

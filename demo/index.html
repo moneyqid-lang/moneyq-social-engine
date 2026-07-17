@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoneyQ Social Engine — Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #f8fafc; min-height: 100vh; }
+
+    .header { background: linear-gradient(135deg, #22c55e, #16a34a); padding: 24px 40px; display: flex; align-items: center; gap: 16px; }
+    .header h1 { font-size: 28px; font-weight: 700; }
+    .header .badge { background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 13px; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+
+    .flow-title { text-align: center; margin-bottom: 40px; }
+    .flow-title h2 { font-size: 32px; margin-bottom: 8px; }
+    .flow-title p { color: #94a3b8; font-size: 16px; }
+
+    .flow { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; }
+    .step { min-width: 280px; background: #1e293b; border-radius: 16px; padding: 24px; border: 1px solid #334155; position: relative; }
+    .step.active { border-color: #22c55e; box-shadow: 0 0 30px rgba(34,197,94,0.2); }
+    .step .number { width: 36px; height: 36px; background: #22c55e; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 16px; }
+    .step h3 { font-size: 18px; margin-bottom: 8px; }
+    .step p { color: #94a3b8; font-size: 14px; line-height: 1.5; }
+    .step .status { margin-top: 12px; padding: 6px 12px; border-radius: 8px; font-size: 13px; display: inline-block; }
+    .status.done { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .status.running { background: rgba(245,158,11,0.2); color: #f59e0b; }
+    .status.pending { background: rgba(148,163,184,0.2); color: #94a3b8; }
+
+    .arrow { display: flex; align-items: center; color: #334155; font-size: 24px; min-width: 40px; justify-content: center; }
+
+    .terminal { background: #0c1222; border: 1px solid #1e293b; border-radius: 12px; margin-top: 40px; overflow: hidden; }
+    .terminal-header { background: #1e293b; padding: 12px 16px; display: flex; align-items: center; gap: 8px; }
+    .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .terminal-dot.red { background: #ef4444; }
+    .terminal-dot.yellow { background: #f59e0b; }
+    .terminal-dot.green { background: #22c55e; }
+    .terminal-body { padding: 20px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; line-height: 1.8; }
+    .terminal-line { opacity: 0; animation: fadeIn 0.3s forwards; }
+    .terminal-line .prompt { color: #22c55e; }
+    .terminal-line .cmd { color: #f8fafc; }
+    .terminal-line .output { color: #94a3b8; }
+    .terminal-line .success { color: #22c55e; }
+    .terminal-line .info { color: #3b82f6; }
+    .terminal-line .warning { color: #f59e0b; }
+
+    @keyframes fadeIn { to { opacity: 1; } }
+
+    .result { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+    .result-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .result-card h4 { color: #94a3b8; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .result-card .value { font-size: 24px; font-weight: 700; color: #22c55e; }
+    .result-card .sub { color: #64748b; font-size: 13px; margin-top: 4px; }
+
+    .platforms { display: flex; gap: 12px; margin-top: 20px; justify-content: center; }
+    .platform { background: #1e293b; padding: 12px 20px; border-radius: 10px; border: 1px solid #334155; display: flex; align-items: center; gap: 8px; }
+    .platform .icon { font-size: 20px; }
+    .platform .name { font-weight: 600; }
+    .platform .check { color: #22c55e; }
+
+    .controls { text-align: center; margin-top: 30px; }
+    .btn { background: #22c55e; color: white; border: none; padding: 14px 32px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn:hover { background: #16a34a; transform: translateY(-2px); }
+    .btn:disabled { background: #334155; cursor: not-allowed; transform: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>💰 MoneyQ Social Engine</h1>
+    <span class="badge">v1.0.0 — TikTok Integration Demo</span>
+  </div>
+
+  <div class="container">
+    <div class="flow-title">
+      <h2>End-to-End Publishing Pipeline</h2>
+      <p>From topic selection to multi-platform publishing — fully automated</p>
+    </div>
+
+    <div class="flow" id="flow">
+      <div class="step" id="step1">
+        <div class="number">1</div>
+        <h3>📋 Select Topic</h3>
+        <p>Pick today's topic from content calendar (119 pre-planned topics across 6 pillars)</p>
+        <span class="status pending" id="status1">Waiting...</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step" id="step2">
+        <div class="number">2</div>
+        <h3>✍️ Generate Copy</h3>
+        <p>AI writes engaging caption with hook, body, and hashtags using Gemini → Mistral → DeepSeek fallback</p>
+        <span class="status pending" id="status2">Waiting...</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step" id="step3">
+        <div class="number">3</div>
+        <h3>🎨 Generate Image</h3>
+        <p>Create eye-catching social media image with AI art + Sharp text overlay</p>
+        <span class="status pending" id="status3">Waiting...</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step" id="step4">
+        <div class="number">4</div>
+        <h3>🎬 Generate Video</h3>
+        <p>Render short-form video with Edge TTS voiceover + Pexels stock footage + FFmpeg</p>
+        <span class="status pending" id="status4">Waiting...</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step" id="step5">
+        <div class="number">5</div>
+        <h3>🚀 Publish</h3>
+        <p>Auto-publish to Instagram, TikTok, Threads, and YouTube Shorts simultaneously</p>
+        <span class="status pending" id="status5">Waiting...</span>
+      </div>
+    </div>
+
+    <div class="platforms">
+      <div class="platform"><span class="icon">📸</span><span class="name">Instagram</span><span class="check" id="check1">✓</span></div>
+      <div class="platform"><span class="icon">🎵</span><span class="name">TikTok</span><span class="check" id="check2">✓</span></div>
+      <div class="platform"><span class="icon">💬</span><span class="name">Threads</span><span class="check" id="check3">✓</span></div>
+      <div class="platform"><span class="icon">▶️</span><span class="name">YouTube Shorts</span><span class="check" id="check4">✓</span></div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-header">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <span style="color: #64748b; margin-left: 12px; font-size: 13px;">Terminal — npm run generate</span>
+      </div>
+      <div class="terminal-body" id="terminal"></div>
+    </div>
+
+    <div class="result" id="result" style="display: none;">
+      <div class="result-card">
+        <h4>Platforms Published</h4>
+        <div class="value">4/4</div>
+        <div class="sub">Instagram, TikTok, Threads, YouTube</div>
+      </div>
+      <div class="result-card">
+        <h4>Content Generated</h4>
+        <div class="value">1 post</div>
+        <div class="sub">Topic: "Cara Hemat di Era Digital"</div>
+      </div>
+      <div class="result-card">
+        <h4>Time Elapsed</h4>
+        <div class="value" id="timer">0s</div>
+        <div class="sub">Fully automated pipeline</div>
+      </div>
+      <div class="result-card">
+        <h4>Status</h4>
+        <div class="value">✅ Success</div>
+        <div class="sub">All content published successfully</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="runBtn" onclick="runDemo()">▶ Run Pipeline Demo</button>
+    </div>
+  </div>
+
+  <script>
+    const terminal = document.getElementById('terminal');
+    let lineIndex = 0;
+
+    function addLine(text, className = '') {
+      const div = document.createElement('div');
+      div.className = 'terminal-line';
+      div.style.animationDelay = `${lineIndex * 0.1}s`;
+      div.innerHTML = text;
+      terminal.appendChild(div);
+      terminal.scrollTop = terminal.scrollHeight;
+      lineIndex++;
+    }
+
+    function activateStep(n) {
+      document.getElementById(`step${n}`).classList.add('active');
+      document.getElementById(`status${n}`).className = 'status running';
+      document.getElementById(`status${n}`).textContent = 'Processing...';
+    }
+
+    function completeStep(n) {
+      document.getElementById(`step${n}`).classList.remove('active');
+      document.getElementById(`status${n}`).className = 'status done';
+      document.getElementById(`status${n}`).textContent = '✅ Done';
+    }
+
+    async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function runDemo() {
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Running...';
+      terminal.innerHTML = '';
+      lineIndex = 0;
+
+      const startTime = Date.now();
+      const timerEl = document.getElementById('timer');
+      const timerInterval = setInterval(() => {
+        timerEl.textContent = `${Math.floor((Date.now() - startTime) / 1000)}s`;
+      }, 100);
+
+      addLine('<span class="prompt">$</span> <span class="cmd">npm run generate</span>');
+      await sleep(500);
+      addLine('');
+      addLine('<span class="info">🚀 MoneyQ Social Engine — 2026-07-16</span>');
+      addLine('<span class="output">   Platforms: instagram, tiktok, threads, youtube</span>');
+      await sleep(300);
+
+      // Step 1
+      activateStep(1);
+      addLine('');
+      addLine('<span class="info">📱 Processing INSTAGRAM...</span>');
+      await sleep(400);
+      addLine('<span class="output">  📋 Topic: Cara Hemat di Era Digital (tips_hemat)</span>');
+      await sleep(300);
+      completeStep(1);
+
+      // Step 2
+      activateStep(2);
+      addLine('<span class="output">  ✍️ Copy generated via Gemini</span>');
+      await sleep(500);
+      addLine('<span class="output">  Hook: Kamu sadar gak, langganan streaming itu...</span>');
+      await sleep(300);
+      addLine('<span class="success">  ✅ Validation passed</span>');
+      completeStep(2);
+
+      // Step 3
+      activateStep(3);
+      addLine('<span class="output">  🖼️ Generating image with AI...</span>');
+      await sleep(800);
+      addLine('<span class="output">  🖼️ Image ready: output/images/tips-hemat-20260716.png</span>');
+      await sleep(200);
+      addLine('<span class="output">  📦 Compressed: 245KB → 89KB</span>');
+      completeStep(3);
+
+      // Instagram publish
+      addLine('<span class="output">  📤 Publishing to Instagram...</span>');
+      await sleep(600);
+      addLine('<span class="success">  ✅ Published: https://instagram.com/p/ABC123</span>');
+
+      // TikTok
+      addLine('');
+      addLine('<span class="info">📱 Processing TIKTOK...</span>');
+      activateStep(4);
+      await sleep(300);
+      addLine('<span class="output">  📋 Topic: Cara Hemat di Era Digital (tips_hemat)</span>');
+      addLine('<span class="output">  🗣️ Voice-over generated (Edge TTS, id-ID-GadisNeural)</span>');
+      await sleep(600);
+      addLine('<span class="output">  🎬 Background footage: saving-money.mp4 (Pexels)</span>');
+      addLine('<span class="output">  🎥 Video rendered: output/videos/daily-tips-20260716.mp4</span>');
+      await sleep(800);
+      addLine('<span class="output">  📤 Uploading to TikTok...</span>');
+      await sleep(500);
+      addLine('<span class="success">  ✅ Published: https://tiktok.com/@moneyq/video/XYZ789</span>');
+      completeStep(4);
+
+      // Threads
+      addLine('');
+      addLine('<span class="info">📱 Processing THREADS...</span>');
+      await sleep(300);
+      addLine('<span class="output">  📤 Creating Threads post with image...</span>');
+      await sleep(500);
+      addLine('<span class="success">  ✅ Published: https://threads.net/@moneyq.id/post/DEF456</span>');
+
+      // YouTube
+      addLine('');
+      addLine('<span class="info">📱 Processing YOUTUBE...</span>');
+      await sleep(300);
+      addLine('<span class="output">  🎥 Video ready: output/videos/daily-tips-20260716.mp4</span>');
+      addLine('<span class="output">  📤 Uploading to YouTube Shorts...</span>');
+      await sleep(600);
+      addLine('<span class="success">  ✅ Published: https://youtube.com/shorts/GHI012</span>');
+
+      // Step 5
+      activateStep(5);
+      await sleep(500);
+      completeStep(5);
+
+      // Summary
+      clearInterval(timerInterval);
+      addLine('');
+      addLine('<span class="success">✨ Pipeline complete. 4/4 published.</span>');
+      addLine('<span class="output">   Duration: 8.2s | Posts: 1 image + 2 videos + 1 thread</span>');
+      addLine('');
+      addLine('<span class="prompt">$</span> <span class="cmd">_</span>');
+
+      document.getElementById('result').style.display = 'grid';
+      btn.textContent = '✅ Demo Complete!';
+      btn.style.background = '#16a34a';
+    }
+  </script>
+</body>
+</html>

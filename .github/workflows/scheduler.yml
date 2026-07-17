@@ -83,9 +83,9 @@ jobs:
             echo "platforms=youtube" >> $GITHUB_OUTPUT
             echo "📋 YouTube slot (UTC $CURRENT_UTC)"
           else
-            # Instagram only (Threads API belum aktif — perlu app approval)
-            echo "platforms=instagram" >> $GITHUB_OUTPUT
-            echo "📋 Instagram slot (UTC $CURRENT_UTC)"
+            # Instagram + Threads
+            echo "platforms=instagram,threads" >> $GITHUB_OUTPUT
+            echo "📋 IG+Threads slot (UTC $CURRENT_UTC)"
           fi
 
       - name: Run Social Engine
@@ -101,8 +101,12 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_APP_ID: ${{ secrets.THREADS_APP_ID }}
+          THREADS_APP_SECRET: ${{ secrets.THREADS_APP_SECRET }}
           TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
           TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}

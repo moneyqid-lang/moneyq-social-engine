@@ -1,13 +1,14 @@
 // moneyq-social-engine/src/generators/video-gen.js
-// Task 15: Video Generator — Edge TTS voiceover + Pexels stock footage + FFmpeg compositing
-import { execFile } from 'node:child_process';
+// Task 15: Video Generator — TTS voiceover + Pexels stock footage + FFmpeg compositing
+import { execFile, exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { accessSync } from 'node:fs';
 import { config } from '../utils/config.js';
-import { ttsSave } from 'edge-tts/out/index.js';
 import ffmpegPath from 'ffmpeg-static';
+
+const execAsync2 = promisify(exec);
 
 const execAsync = promisify(execFile);
 const OUTPUT_DIR = join(process.cwd(), 'output', 'videos');
@@ -97,14 +98,29 @@ async function generateVoiceOver(text, pillar, timestamp) {
     return null;
   }
 
-  const audioPath = join(OUTPUT_DIR, `voice-${pillar}-${timestamp}.mp3`);
+  const audioPath = join(OUTPUT_DIR, `voice-${pillar}-${timestamp}.aiff`);
+
+  // Try Edge TTS first (if available)
   try {
-    await ttsSave(text, audioPath, { voice: 'id-ID-GadisNeural' });
-    console.log(`  Voice-over generated: ${audioPath}`);
-    return audioPath;
+    const { ttsSave } = await import('edge-tts/out/index.js');
+    const mp3Path = audioPath.replace('.aiff', '.mp3');
+    await ttsSave(text, mp3Path, { voice: 'id-ID-GadisNeural' });
+    console.log(`  Voice-over generated (Edge TTS): ${mp3Path}`);
+    return mp3Path;
+  } catch {
+    // Edge TTS not available, try macOS TTS
+  }
+
+  // Fallback: macOS built-in TTS
+  try {
+    // Use macOS `say` command to generate AIFF, then convert to MP3 with ffmpeg
+    await execAsync2(`say -v "Samantha" -o "${audioPath}" "${text.replace(/"/g, '\\"')}"`);
+    const mp3Path = audioPath.replace('.aiff', '.mp3');
+    await execAsync2(`"${ffmpegPath}" -i "${audioPath}" -codec:a libmp3lame -b:a 128k -y "${mp3Path}"`);
+    console.log(`  Voice-over generated (macOS TTS): ${mp3Path}`);
+    return mp3Path;
   } catch (err) {
-    console.log(`  Edge TTS failed: ${err.message}, video will be silent`);
-    // Graceful degradation: continue without audio
+    console.log(`  TTS failed: ${err.message}, video will be silent`);
     return null;
   }
 }
@@ -195,6 +211,11 @@ async function renderVideo(hook, audioPath, footagePath, duration, outputPath) {
       + `:fontcolor=#22c55e:fontsize=32:x=60:y=h-120[vid]`,
   );
 
+  // --- Audio input (if available) ---
+  if (audioPath) {
+    inputs.push('-i', audioPath);
+  }
+
   // --- Build ffmpeg arguments ---
   const args = [
     ...inputs,
@@ -206,10 +227,9 @@ async function renderVideo(hook, audioPath, footagePath, duration, outputPath) {
     '-pix_fmt', 'yuv420p',
   ];
 
-  // --- Audio (if available) ---
+  // --- Audio mapping (if available) ---
   if (audioPath) {
-    const audioInputIndex = inputs.length; // audio is the next input index
-    args.push('-i', audioPath);
+    const audioInputIndex = (inputs.length / 2) - 1; // last input index
     args.push('-map', `${audioInputIndex}:a:0`);
     args.push('-c:a', 'aac', '-b:a', '128k', '-shortest');
   }

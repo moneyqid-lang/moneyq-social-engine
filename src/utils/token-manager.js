@@ -34,9 +34,10 @@ export async function getValidInstagramToken() {
 
 /**
  * Get valid Threads access token (auto-refresh if needed)
+ * Uses dedicated Threads app credentials (separate from Facebook/Instagram)
  */
 export async function getValidThreadsToken() {
-  return getValidFacebookToken('THREADS_ACCESS_TOKEN', 'Threads');
+  return getValidThreadsTokenInternal('THREADS_ACCESS_TOKEN', 'Threads');
 }
 
 /**
@@ -97,7 +98,80 @@ export async function getValidYouTubeToken() {
 }
 
 // ---------------------------------------------------------------------------
-// Facebook/Instagram/Threads shared token logic
+// Threads-specific token logic (separate app, graph.threads.net)
+// ---------------------------------------------------------------------------
+
+/**
+ * Get valid Threads token using Threads app credentials
+ * Threads API uses graph.threads.net with its own app ID/secret
+ */
+async function getValidThreadsTokenInternal(envKey, platformName) {
+  const token = process.env[envKey];
+  if (!token) throw new Error(`${envKey} not set`);
+
+  const appId = process.env.THREADS_APP_ID;
+  const appSecret = process.env.THREADS_APP_SECRET;
+
+  if (!appId || !appSecret) {
+    console.log(`  ⚠️ THREADS_APP_ID/THREADS_APP_SECRET not set — cannot auto-refresh ${platformName} token`);
+    return token;
+  }
+
+  // Test if token is still valid by calling /me
+  try {
+    const res = await fetch(`https://graph.threads.net/v1.0/me?fields=id&access_token=${token}`);
+    const data = await res.json();
+
+    if (data.error) {
+      console.log(`  ❌ ${platformName} token invalid: ${data.error.message}`);
+
+      // Try to refresh using th_exchange_token
+      const refreshed = await refreshThreadsToken(token, envKey, platformName, appId, appSecret);
+      if (refreshed && refreshed !== token) return refreshed;
+
+      throw new Error(`${platformName} token expired and refresh failed. Regenerate: https://developers.facebook.com/apps/${appId}/`);
+    }
+
+    console.log(`  ✅ ${platformName} token is valid (user: ${data.id})`);
+    return token;
+  } catch (err) {
+    if (err.message.includes('expired') || err.message.includes('Regenerate')) throw err;
+    console.log(`  ⚠️ ${platformName} token check failed: ${err.message} — will refresh on auth error`);
+    return token;
+  }
+}
+
+/**
+ * Refresh Threads token via graph.threads.net
+ */
+async function refreshThreadsToken(currentToken, envKey, platformName, appId, appSecret) {
+  try {
+    const res = await fetch(
+      `https://graph.threads.net/access_token?` +
+      `grant_type=th_exchange_token&` +
+      `client_secret=${appSecret}&` +
+      `access_token=${currentToken}`
+    );
+
+    const data = await res.json();
+
+    if (data.access_token) {
+      console.log(`  ✅ ${platformName} token refreshed (long-lived)`);
+      await updateSecret(envKey, data.access_token);
+      process.env[envKey] = data.access_token;
+      return data.access_token;
+    }
+
+    console.log(`  ⚠️ ${platformName} token refresh failed: ${data.error?.message || 'unknown'}`);
+    return null;
+  } catch (err) {
+    console.log(`  ⚠️ ${platformName} token refresh error: ${err.message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Facebook/Instagram shared token logic
 // ---------------------------------------------------------------------------
 
 /**
@@ -335,17 +409,27 @@ export async function executeWithTokenRefresh(envKey, platformName, apiFn) {
 
     console.log(`  🔄 ${platformName} auth error — attempting token refresh...`);
 
-    // Try to refresh
-    const appId = process.env.FB_APP_ID;
-    const appSecret = process.env.FB_APP_SECRET;
+    // Threads uses different app credentials than Instagram/Facebook
+    const isThreads = envKey === 'THREADS_ACCESS_TOKEN';
+    let refreshed;
 
-    if (!appId || !appSecret) {
-      throw new Error(`${platformName} token expired and FB_APP_ID/FB_APP_SECRET not set for refresh`);
+    if (isThreads) {
+      const threadsAppId = process.env.THREADS_APP_ID;
+      const threadsAppSecret = process.env.THREADS_APP_SECRET;
+      if (!threadsAppId || !threadsAppSecret) {
+        throw new Error(`${platformName} token expired and THREADS_APP_ID/THREADS_APP_SECRET not set for refresh`);
+      }
+      refreshed = await refreshThreadsToken(token, envKey, platformName, threadsAppId, threadsAppSecret);
+    } else {
+      const appId = process.env.FB_APP_ID;
+      const appSecret = process.env.FB_APP_SECRET;
+      if (!appId || !appSecret) {
+        throw new Error(`${platformName} token expired and FB_APP_ID/FB_APP_SECRET not set for refresh`);
+      }
+      refreshed = await refreshFacebookToken(token, envKey, platformName, appId, appSecret);
     }
 
-    const refreshed = await refreshFacebookToken(token, envKey, platformName, appId, appSecret);
-
-    if (refreshed === token) {
+    if (!refreshed || refreshed === token) {
       throw new Error(`${platformName} token refresh failed — token unchanged`);
     }
 
