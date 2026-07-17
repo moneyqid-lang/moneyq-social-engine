@@ -3,45 +3,48 @@
 // Uses dedicated Threads app credentials (separate from Instagram)
 import { config } from '../utils/config.js';
 import { withRetry } from '../utils/retry.js';
-import { getValidThreadsToken } from '../utils/token-manager.js';
+import { executeWithTokenRefresh } from '../utils/token-manager.js';
 
 const THREADS_API = 'https://graph.threads.net/v1.0';
 
 /**
  * Publish a text thread to Threads.
+ * Auto-retries with refreshed token on auth errors.
  *
  * @param {string} text - Thread text content
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToThreads(text) {
   const { userId } = config.platforms.threads;
-  const accessToken = await getValidThreadsToken();
 
-  if (!accessToken || !userId) {
-    console.log('  ⚠️ Threads API not configured. Set THREADS_ACCESS_TOKEN and THREADS_USER_ID in .env');
+  if (!userId) {
+    console.log('  ⚠️ Threads API not configured. Set THREADS_USER_ID in .env');
     return { postId: null, permalink: null, manualUpload: true, text };
   }
 
-  // Step 1: Create thread media container
-  console.log('  📤 Creating Threads post...');
-  const containerId = await createThreadContainer(text, accessToken, userId);
+  return executeWithTokenRefresh('THREADS_ACCESS_TOKEN', 'Threads', async (accessToken) => {
+    // Step 1: Create thread media container
+    console.log('  📤 Creating Threads post...');
+    const containerId = await createThreadContainer(text, accessToken, userId);
 
-  // Step 2: Wait for container to be ready (Threads containers need processing)
-  console.log('  ⏳ Waiting for container processing...');
-  await waitForContainer(containerId, accessToken);
+    // Step 2: Wait for container to be ready
+    console.log('  ⏳ Waiting for container processing...');
+    await waitForContainer(containerId, accessToken);
 
-  // Step 3: Publish thread
-  console.log('  🚀 Publishing to Threads...');
-  const result = await publishThread(containerId, accessToken, userId);
+    // Step 3: Publish thread
+    console.log('  🚀 Publishing to Threads...');
+    const result = await publishThread(containerId, accessToken, userId);
 
-  return {
-    postId: result.id,
-    permalink: `https://www.threads.net/@moneyq/post/${result.id}`,
-  };
+    return {
+      postId: result.id,
+      permalink: `https://www.threads.net/@moneyq/post/${result.id}`,
+    };
+  });
 }
 
 /**
  * Publish a thread with an image.
+ * Auto-retries with refreshed token on auth errors.
  *
  * @param {string} imageUrl - URL of the image to attach
  * @param {string} text - Caption text
@@ -49,28 +52,29 @@ export async function publishToThreads(text) {
  */
 export async function publishToThreadsWithImage(imageUrl, text) {
   const { userId } = config.platforms.threads;
-  const accessToken = await getValidThreadsToken();
 
-  if (!accessToken || !userId) {
+  if (!userId) {
     console.log('  ⚠️ Threads API not configured.');
     return { postId: null, permalink: null, manualUpload: true };
   }
 
-  // Step 1: Create image container
-  console.log('  📤 Creating Threads image post...');
-  const containerId = await createImageContainer(imageUrl, text, accessToken, userId);
+  return executeWithTokenRefresh('THREADS_ACCESS_TOKEN', 'Threads', async (accessToken) => {
+    // Step 1: Create image container
+    console.log('  📤 Creating Threads image post...');
+    const containerId = await createImageContainer(imageUrl, text, accessToken, userId);
 
-  // Step 2: Wait for processing
-  await waitForContainer(containerId, accessToken);
+    // Step 2: Wait for processing
+    await waitForContainer(containerId, accessToken);
 
-  // Step 3: Publish
-  console.log('  🚀 Publishing to Threads...');
-  const result = await publishThread(containerId, accessToken, userId);
+    // Step 3: Publish
+    console.log('  🚀 Publishing to Threads...');
+    const result = await publishThread(containerId, accessToken, userId);
 
-  return {
-    postId: result.id,
-    permalink: `https://www.threads.net/@moneyq/post/${result.id}`,
-  };
+    return {
+      postId: result.id,
+      permalink: `https://www.threads.net/@moneyq/post/${result.id}`,
+    };
+  });
 }
 
 async function createThreadContainer(text, accessToken, userId) {

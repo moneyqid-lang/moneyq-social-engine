@@ -120,7 +120,10 @@ async function getValidFacebookToken(envKey, platformName) {
   const debug = await debugFacebookToken(token, appId, appSecret);
 
   if (!debug.data) {
-    console.log(`  ⚠️ Could not debug ${platformName} token — using as-is`);
+    // Debug API not available (code 200 = "API access blocked")
+    // Token might still work for publishing — just can't check expiry proactively
+    // Refresh will be attempted when the API returns an auth error
+    console.log(`  ℹ️ ${platformName} token: cannot check expiry (debug API not available) — will refresh on auth error`);
     return token;
   }
 
@@ -298,6 +301,57 @@ async function updateEnvFile(key, value) {
     console.log(`  💾 Updated .env: ${key}`);
   } catch (err) {
     console.log(`  ⚠️ Failed to update .env ${key}: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Execute with auto-refresh — retry API call if auth error
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a Facebook API call with automatic token refresh on auth error.
+ * Wraps the publisher function to handle token expiration transparently.
+ *
+ * @param {string} envKey — Environment variable key (INSTAGRAM_ACCESS_TOKEN or THREADS_ACCESS_TOKEN)
+ * @param {string} platformName — Display name for logging
+ * @param {Function} apiFn — Async function that takes (accessToken) and makes the API call
+ * @returns {Promise<any>} Result from apiFn
+ */
+export async function executeWithTokenRefresh(envKey, platformName, apiFn) {
+  // First attempt with current token
+  let token = process.env[envKey];
+
+  try {
+    return await apiFn(token);
+  } catch (err) {
+    // Check if it's an auth error (token expired/invalid)
+    const isAuthError = err.message.includes('OAuth') ||
+      err.message.includes('access token') ||
+      err.message.includes('Invalid token') ||
+      err.message.includes('code 190') ||
+      err.message.includes('code 102');
+
+    if (!isAuthError) throw err;
+
+    console.log(`  🔄 ${platformName} auth error — attempting token refresh...`);
+
+    // Try to refresh
+    const appId = process.env.FB_APP_ID;
+    const appSecret = process.env.FB_APP_SECRET;
+
+    if (!appId || !appSecret) {
+      throw new Error(`${platformName} token expired and FB_APP_ID/FB_APP_SECRET not set for refresh`);
+    }
+
+    const refreshed = await refreshFacebookToken(token, envKey, platformName, appId, appSecret);
+
+    if (refreshed === token) {
+      throw new Error(`${platformName} token refresh failed — token unchanged`);
+    }
+
+    // Retry with new token
+    console.log(`  🔄 Retrying ${platformName} with refreshed token...`);
+    return await apiFn(refreshed);
   }
 }
 

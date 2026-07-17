@@ -1,13 +1,14 @@
 // moneyq-social-engine/src/publishers/instagram.js
 import { config } from '../utils/config.js';
 import { withRetry } from '../utils/retry.js';
-import { getValidInstagramToken } from '../utils/token-manager.js';
+import { getValidInstagramToken, executeWithTokenRefresh } from '../utils/token-manager.js';
 
 const IG_API_BASE = 'https://graph.facebook.com/v20.0';
 
 /**
  * Publish a single image post to Instagram Business Account.
  * Uses 2-step process: create media container → publish.
+ * Auto-retries with refreshed token on auth errors.
  *
  * @param {string} imageUrl - Public URL to the image (must be HTTPS)
  * @param {string} caption - Post caption with hashtags
@@ -15,23 +16,22 @@ const IG_API_BASE = 'https://graph.facebook.com/v20.0';
  */
 export async function publishToInstagram(imageUrl, caption) {
   const { accountId } = config.platforms.instagram;
-  const accessToken = await getValidInstagramToken();
 
   if (!imageUrl) throw new Error('Image URL is required for Instagram publishing');
 
-  // Step 1: Create media container
-  console.log('  📤 Creating Instagram media container...');
-  const containerId = await createMediaContainer(imageUrl, caption, accessToken, accountId);
+  return executeWithTokenRefresh('INSTAGRAM_ACCESS_TOKEN', 'Instagram', async (accessToken) => {
+    // Step 1: Create media container
+    console.log('  📤 Creating Instagram media container...');
+    const containerId = await createMediaContainer(imageUrl, caption, accessToken, accountId);
 
-  // Step 2: Wait for processing (Instagram needs time to process the image)
-  console.log('  ⏳ Waiting for Instagram processing...');
-  await waitForProcessing(containerId, accessToken);
+    // Step 2: Wait for processing (Instagram needs time to process the image)
+    console.log('  ⏳ Waiting for Instagram processing...');
+    await waitForProcessing(containerId, accessToken);
 
-  // Step 3: Publish
-  console.log('  🚀 Publishing to Instagram...');
-  const publishResult = await publishContainer(containerId, accessToken, accountId);
-
-  return publishResult;
+    // Step 3: Publish
+    console.log('  🚀 Publishing to Instagram...');
+    return await publishContainer(containerId, accessToken, accountId);
+  });
 }
 
 async function createMediaContainer(imageUrl, caption, accessToken, accountId) {
