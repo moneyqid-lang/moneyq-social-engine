@@ -11,6 +11,9 @@ jobs:
   check-and-refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      secrets: write
 
     steps:
       - name: Checkout repo

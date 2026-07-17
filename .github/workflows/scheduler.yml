@@ -29,6 +29,9 @@ jobs:
   generate-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      secrets: write
 
     steps:
       - name: Checkout moneyq-social-engine
