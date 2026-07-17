@@ -114,7 +114,7 @@ jobs:
         run: |
           PLATFORMS="${{ steps.platforms.outputs.platforms }}"
           echo "🚀 Publishing to: $PLATFORMS"
-          node src/orchestrator.js "" $(echo $PLATFORMS | tr ',' ' ')
+          node src/orchestrator.js $PLATFORMS
 
       - name: Archive output artifacts
         if: always()

@@ -4,6 +4,7 @@
 //
 // Called by GitHub Actions cron (via src/index.js generate) every 2-4 hours.
 
+import 'dotenv/config';
 import { selectTopic } from './generators/topic-selector.js';
 import { generateCopy } from './generators/copy-writer.js';
 import { generateImage } from './generators/image-gen.js';
@@ -94,10 +95,18 @@ export async function run(dateStr, targetPlatforms) {
         // Instagram: generate image → compress → publish
         const imageResult = await generateImage(copy, topic);
         const mediaPath = await compressImage(imageResult.imagePath);
-        mediaUrls = [imageResult.imageUrl || imageResult.imagePath];
         console.log(`  🖼️ Image ready: ${mediaPath}`);
 
-        result = await publisher.publishToInstagram(mediaUrls[0], publishContent);
+        if (!imageResult.imageUrl) {
+          console.log(`  ⚠️ No public image URL available. Instagram requires a public HTTPS URL.`);
+          console.log(`  💡 Fix: Create 'content' bucket in Supabase Storage.`);
+          await recordFailure(topic, platform, copy, 'No public image URL — Supabase bucket missing');
+          results.push({ platform, status: 'error', error: 'No public image URL' });
+          continue;
+        }
+
+        mediaUrls = [imageResult.imageUrl];
+        result = await publisher.publishToInstagram(imageResult.imageUrl, publishContent);
       } else if (platform === 'threads') {
         // Threads: text-based post (optionally with image)
         const imageResult = await generateImage(copy, topic);
@@ -108,18 +117,24 @@ export async function run(dateStr, targetPlatforms) {
           result = await publisher.publishToThreads(publishContent);
         }
       } else if (platform === 'tiktok' || platform === 'youtube') {
-        // Video platforms: generate video → publish
-        const { generateVideo } = await import('./generators/video-gen.js');
-        const videoPath = await generateVideo(copy, topic, 'daily');
-        console.log(`  🎥 Video ready: ${videoPath}`);
+        // Video platforms: cascade Vidu → Remotion → FFmpeg
+        const { generateVideoWithFallback } = await import('./generators/video-cascade.js');
+        const { path: videoPath, provider } = await generateVideoWithFallback(copy, topic, 'daily');
+        console.log(`  🎥 Video ready (${provider}): ${videoPath}`);
         mediaUrls = [videoPath];
 
         if (platform === 'tiktok') {
           result = await publisher.publishToTikTok(videoPath, publishContent);
         } else {
+          // YouTube title: max 100 chars, truncate at word boundary
+          let title = copy.hook.slice(0, 100);
+          if (title.length === 100) {
+            const lastSpace = title.lastIndexOf(' ');
+            if (lastSpace > 50) title = title.slice(0, lastSpace);
+          }
           result = await publisher.publishToYouTube(
             videoPath,
-            copy.hook.slice(0, 100),
+            title,
             publishContent,
             copy.hashtags.slice(0, 5)
           );
@@ -192,8 +207,22 @@ async function recordFailure(topic, platform, copy, error) {
 // ---------------------------------------------------------------------------
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [, , dateArg, ...platforms] = process.argv.slice(2);
-  run(dateArg, platforms.length > 0 ? platforms : undefined)
+  const args = process.argv.slice(2);
+
+  // Parse date (first arg, skip if empty or looks like a platform name)
+  const dateArg = args[0] && !args[0].includes(',') && !['instagram','threads','tiktok','youtube'].includes(args[0])
+    ? args[0]
+    : undefined;
+
+  // Parse platforms (remaining args, or first arg if it's comma-separated)
+  let platforms;
+  const platformArgs = dateArg ? args.slice(1) : args;
+  if (platformArgs.length > 0) {
+    // Support both "instagram threads" and "instagram,threads"
+    platforms = platformArgs.flatMap(p => p.split(',')).filter(Boolean);
+  }
+
+  run(dateArg, platforms)
     .then(result => {
       console.log(JSON.stringify(result, null, 2));
       process.exit(0);
