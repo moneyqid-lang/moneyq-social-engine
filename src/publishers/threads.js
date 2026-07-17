@@ -15,10 +15,17 @@ const THREADS_API = 'https://graph.threads.net/v1.0';
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToThreads(text) {
-  const { userId } = config.platforms.threads;
+  const threadsConfig = config.platforms?.threads;
+  const userId = threadsConfig?.userId || process.env.THREADS_USER_ID;
+  const accessToken = threadsConfig?.accessToken || process.env.THREADS_ACCESS_TOKEN;
 
   if (!userId) {
     console.log('  ⚠️ Threads API not configured. Set THREADS_USER_ID in .env');
+    return { postId: null, permalink: null, manualUpload: true, text };
+  }
+
+  if (!accessToken) {
+    console.log('  ⚠️ Threads access token not configured. Set THREADS_ACCESS_TOKEN in .env');
     return { postId: null, permalink: null, manualUpload: true, text };
   }
 
@@ -51,9 +58,11 @@ export async function publishToThreads(text) {
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToThreadsWithImage(imageUrl, text) {
-  const { userId } = config.platforms.threads;
+  const threadsConfig = config.platforms?.threads;
+  const userId = threadsConfig?.userId || process.env.THREADS_USER_ID;
+  const accessToken = threadsConfig?.accessToken || process.env.THREADS_ACCESS_TOKEN;
 
-  if (!userId) {
+  if (!userId || !accessToken) {
     console.log('  ⚠️ Threads API not configured.');
     return { postId: null, permalink: null, manualUpload: true };
   }

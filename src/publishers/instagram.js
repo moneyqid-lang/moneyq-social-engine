@@ -15,9 +15,11 @@ const IG_API_BASE = 'https://graph.facebook.com/v20.0';
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToInstagram(imageUrl, caption) {
-  const { accountId } = config.platforms.instagram;
+  const igConfig = config.platforms?.instagram;
+  const accountId = igConfig?.accountId || process.env.INSTAGRAM_ACCOUNT_ID;
 
   if (!imageUrl) throw new Error('Image URL is required for Instagram publishing');
+  if (!accountId) throw new Error('INSTAGRAM_ACCOUNT_ID not configured');
 
   return executeWithTokenRefresh('INSTAGRAM_ACCESS_TOKEN', 'Instagram', async (accessToken) => {
     // Step 1: Create media container
