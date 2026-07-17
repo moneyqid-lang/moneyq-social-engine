@@ -225,9 +225,16 @@ async function debugFacebookToken(token, appId, appSecret) {
       `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${appToken}`
     );
 
-    return await res.json();
+    const data = await res.json();
+
+    // Log debug response for troubleshooting
+    if (data.error) {
+      console.log(`  ⚠️ Token debug API error: ${data.error.message} (code: ${data.error.code})`);
+    }
+
+    return data;
   } catch (err) {
-    console.log(`  ⚠️ Token debug failed: ${err.message}`);
+    console.log(`  ⚠️ Token debug network error: ${err.message}`);
     return { data: null };
   }
 }
