@@ -11,9 +11,6 @@ jobs:
   check-and-refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      secrets: write
 
     steps:
       - name: Checkout repo
@@ -40,6 +37,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           # GitHub token for updating secrets
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           node -e "
             import { checkAllTokens } from './src/utils/token-manager.js';

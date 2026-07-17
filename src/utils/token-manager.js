@@ -248,18 +248,28 @@ async function updateSecret(key, value) {
 }
 
 /**
- * Update GitHub Secret via gh CLI (requires GITHUB_TOKEN with secrets write)
+ * Update GitHub Secret via gh CLI
+ * Uses GH_PAT (Personal Access Token with repo scope) for secrets write access
+ * Falls back to GITHUB_TOKEN (limited, may not work for secrets)
  */
 async function updateGitHubSecret(key, value) {
   try {
+    // Use PAT if available (has secrets write access)
+    const pat = process.env.GH_PAT;
+    const env = pat
+      ? { ...process.env, GITHUB_TOKEN: pat }
+      : { ...process.env };
+
     await execFileAsync('gh', ['secret', 'set', key, '--body', value], {
-      env: { ...process.env },
+      env,
       timeout: 15000,
     });
     console.log(`  🔐 GitHub Secret updated: ${key}`);
   } catch (err) {
     console.log(`  ⚠️ Failed to update GitHub Secret ${key}: ${err.message}`);
-    console.log(`  💡 Ensure GITHUB_TOKEN has 'secrets' write permission`);
+    if (!process.env.GH_PAT) {
+      console.log(`  💡 Set GH_PAT secret (Personal Access Token with repo scope) for auto-update`);
+    }
   }
 }
 

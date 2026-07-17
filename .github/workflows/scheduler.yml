@@ -29,9 +29,6 @@ jobs:
   generate-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: read
-      secrets: write
 
     steps:
       - name: Checkout moneyq-social-engine
@@ -115,6 +112,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           MONEYQ_URL: ${{ secrets.MONEYQ_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           PLATFORMS="${{ steps.platforms.outputs.platforms }}"
           echo "🚀 Publishing to: $PLATFORMS"
