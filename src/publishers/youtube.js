@@ -3,6 +3,7 @@
 import { config } from '../utils/config.js';
 import { withRetry } from '../utils/retry.js';
 import { statSync, createReadStream } from 'node:fs';
+import { getValidYouTubeToken } from '../utils/token-manager.js';
 
 /**
  * Publish a Shorts video to YouTube.
@@ -15,15 +16,15 @@ import { statSync, createReadStream } from 'node:fs';
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToYouTube(videoPath, title, description, tags = []) {
-  const { clientId, clientSecret, refreshToken } = config.platforms.youtube;
+  const { refreshToken } = config.platforms.youtube;
 
   if (!refreshToken) {
     console.log('  ⚠️ YouTube API not configured. Save video for manual upload.');
     return { postId: null, permalink: null, manualUpload: true, videoPath };
   }
 
-  // Step 1: Get access token
-  const accessToken = await refreshAccessToken(clientId, clientSecret, refreshToken);
+  // Step 1: Get valid access token (auto-refresh)
+  const accessToken = await getValidYouTubeToken();
 
   // Step 2: Upload video via resumable upload
   console.log('  📤 Uploading to YouTube Shorts...');
@@ -35,23 +36,6 @@ export async function publishToYouTube(videoPath, title, description, tags = [])
     postId: videoId,
     permalink: `https://youtube.com/shorts/${videoId}`,
   };
-}
-
-async function refreshAccessToken(clientId, clientSecret, refreshToken) {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
-
-  if (!res.ok) throw new Error(`YouTube auth failed: ${res.status}`);
-  const data = await res.json();
-  return data.access_token;
 }
 
 async function uploadVideo(videoPath, title, description, tags, accessToken) {
@@ -104,6 +88,7 @@ async function uploadVideo(videoPath, title, description, tags, accessToken) {
       'Content-Length': String(fileSize),
     },
     body: createReadStream(videoPath),
+    duplex: 'half',
   });
 
   if (!uploadRes.ok) {

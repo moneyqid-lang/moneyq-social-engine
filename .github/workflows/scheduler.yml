@@ -111,6 +111,7 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           MONEYQ_URL: ${{ secrets.MONEYQ_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PLATFORMS="${{ steps.platforms.outputs.platforms }}"
           echo "🚀 Publishing to: $PLATFORMS"

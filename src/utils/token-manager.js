@@ -1,137 +1,270 @@
 // moneyq-social-engine/src/utils/token-manager.js
-// Auto-refresh Facebook/Instagram long-lived tokens before expiry
+// Universal token auto-refresh for all platforms
+//
+// Supports: Instagram, Threads (via Facebook Graph API), YouTube (OAuth2)
+// Auto-updates GitHub Secrets in CI, .env locally
+//
+// Token lifecycle:
+//   Instagram: long-lived token → refresh before 60-day expiry
+//   Threads: long-lived token → refresh before 60-day expiry (same mechanism)
+//   YouTube: refresh token → get new access token (1-hour lifetime)
+
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const ENV_PATH = join(process.cwd(), '.env');
-const REFRESH_BUFFER_DAYS = 7; // Refresh if < 7 days until expiry
+const REFRESH_BUFFER_DAYS = 7;
+const IS_CI = !!process.env.GITHUB_ACTIONS;
+const REPO = process.env.GITHUB_REPOSITORY || '';
+
+// ---------------------------------------------------------------------------
+// Platform token getters — single entry point for each platform
+// ---------------------------------------------------------------------------
 
 /**
  * Get valid Instagram access token (auto-refresh if needed)
- * @returns {Promise<string>} Valid access token
  */
 export async function getValidInstagramToken() {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) throw new Error('INSTAGRAM_ACCESS_TOKEN not set');
+  return getValidFacebookToken('INSTAGRAM_ACCESS_TOKEN', 'Instagram');
+}
 
-  // Check token validity
-  const debug = await debugToken(token);
+/**
+ * Get valid Threads access token (auto-refresh if needed)
+ */
+export async function getValidThreadsToken() {
+  return getValidFacebookToken('THREADS_ACCESS_TOKEN', 'Threads');
+}
 
-  // Token is invalid — try to refresh
-  if (debug.data && debug.data.is_valid === false) {
-    console.log('  ❌ Token is INVALID — attempting refresh...');
-    const refreshed = await refreshToken(token);
-    if (refreshed !== token) return refreshed;
-    throw new Error(
-      'Instagram token is invalid and could not be refreshed. ' +
-      'Generate a new token at: https://developers.facebook.com/tools/explorer/'
-    );
-  }
+/**
+ * Get valid YouTube access token (auto-refresh via refresh_token)
+ */
+export async function getValidYouTubeToken() {
+  const accessToken = process.env.YOUTUBE_ACCESS_TOKEN;
+  const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
+  const clientId = process.env.YOUTUBE_CLIENT_ID;
+  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
 
-  // Check expiry
-  const expiresAt = debug.data?.expires_at ? debug.data.expires_at * 1000 : null;
-  const now = Date.now();
+  if (!refreshToken) throw new Error('YOUTUBE_REFRESH_TOKEN not set');
+  if (!clientId || !clientSecret) throw new Error('YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET not set');
 
-  if (expiresAt) {
-    const daysLeft = (expiresAt - now) / (1000 * 60 * 60 * 24);
-    console.log(`  📅 Token expires in ${Math.round(daysLeft)} days`);
+  // YouTube access tokens expire in 1 hour — always refresh
+  console.log('  🔄 Refreshing YouTube access token...');
 
-    if (daysLeft < 0) {
-      console.log('  ❌ Token EXPIRED — attempting refresh...');
-      const refreshed = await refreshToken(token);
-      if (refreshed !== token) return refreshed;
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+    });
+
+    const data = await res.json();
+
+    if (data.access_token) {
+      const expiresIn = data.expires_in || 3600;
+      console.log(`  ✅ YouTube token refreshed (expires in ${Math.round(expiresIn / 60)} min)`);
+
+      // Update stored access token
+      await updateSecret('YOUTUBE_ACCESS_TOKEN', data.access_token);
+
+      return data.access_token;
+    }
+
+    // Refresh token itself might be invalid
+    if (data.error === 'invalid_grant') {
       throw new Error(
-        'Instagram token expired and could not be refreshed. ' +
-        'Generate a new token at: https://developers.facebook.com/tools/explorer/'
+        'YouTube refresh token is REVOKED. Re-authorize the app:\n' +
+        '  1. Go to https://console.cloud.google.com/apis/credentials\n' +
+        '  2. OAuth 2.0 Playground: https://developers.google.com/oauthplayground/\n' +
+        '  3. Select YouTube Data API v3\n' +
+        '  4. Authorize & get new refresh token'
       );
     }
 
-    if (daysLeft < REFRESH_BUFFER_DAYS) {
-      console.log('  🔄 Token expiring soon, refreshing...');
-      return await refreshToken(token);
+    throw new Error(`YouTube token refresh failed: ${data.error_description || data.error}`);
+  } catch (err) {
+    if (err.message.includes('REVOKED')) throw err;
+    throw new Error(`YouTube token refresh error: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Facebook/Instagram/Threads shared token logic
+// ---------------------------------------------------------------------------
+
+/**
+ * Get valid Facebook-platform token (Instagram or Threads)
+ * Both use the same Facebook Graph API token exchange mechanism
+ */
+async function getValidFacebookToken(envKey, platformName) {
+  const token = process.env[envKey];
+  if (!token) throw new Error(`${envKey} not set`);
+
+  const appId = process.env.FB_APP_ID;
+  const appSecret = process.env.FB_APP_SECRET;
+
+  if (!appId || !appSecret) {
+    console.log(`  ⚠️ FB_APP_ID/FB_APP_SECRET not set — cannot auto-refresh ${platformName} token`);
+    return token;
+  }
+
+  // Step 1: Debug token to check validity
+  const debug = await debugFacebookToken(token, appId, appSecret);
+
+  if (!debug.data) {
+    console.log(`  ⚠️ Could not debug ${platformName} token — using as-is`);
+    return token;
+  }
+
+  const { is_valid, expires_at, scopes } = debug.data;
+
+  // Token is invalid — cannot refresh, need manual regeneration
+  if (is_valid === false) {
+    throw new Error(
+      `${platformName} token is INVALID (revoked or malformed).\n` +
+      `  Auto-refresh not possible for invalid tokens.\n` +
+      `  Generate new token:\n` +
+      `  1. https://developers.facebook.com/tools/explorer/\n` +
+      `  2. Select app → Generate token with required scopes\n` +
+      `  3. Update ${envKey} in GitHub Secrets`
+    );
+  }
+
+  // Step 2: Check expiry
+  if (expires_at) {
+    const now = Date.now();
+    const expiresMs = expires_at * 1000;
+    const daysLeft = (expiresMs - now) / (1000 * 60 * 60 * 24);
+
+    console.log(`  📅 ${platformName} token: ${Math.round(daysLeft)} days left (scopes: ${scopes?.join(', ') || 'unknown'})`);
+
+    // Token expired
+    if (daysLeft < 0) {
+      console.log(`  ❌ ${platformName} token EXPIRED ${Math.abs(Math.round(daysLeft))} days ago — refreshing...`);
+      return await refreshFacebookToken(token, envKey, platformName, appId, appSecret);
     }
+
+    // Token expiring soon (within buffer)
+    if (daysLeft < REFRESH_BUFFER_DAYS) {
+      console.log(`  🔄 ${platformName} token expiring in ${Math.round(daysLeft)} days — refreshing early...`);
+      return await refreshFacebookToken(token, envKey, platformName, appId, appSecret);
+    }
+
+    console.log(`  ✅ ${platformName} token is valid`);
   }
 
   return token;
 }
 
 /**
- * Debug/inspect a Facebook access token
- * Uses app access token (app_id|app_secret) to avoid self-referencing expired token
+ * Refresh a Facebook long-lived token (works for both Instagram and Threads)
+ * Exchange current long-lived token for a new one (extends by 60 days)
  */
-async function debugToken(token) {
-  try {
-    const appId = process.env.FB_APP_ID;
-    const appSecret = process.env.FB_APP_SECRET;
-
-    // Use app access token for debug (works even if user token is expired)
-    const appToken = appId && appSecret ? `${appId}|${appSecret}` : token;
-
-    const res = await fetch(
-      `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${appToken}`
-    );
-    const data = await res.json();
-
-    // Log token status for debugging
-    if (data.data) {
-      const d = data.data;
-      console.log(`  🔍 Token valid: ${d.is_valid}, expires: ${d.expires_at ? new Date(d.expires_at * 1000).toISOString() : 'never'}, scopes: ${d.scopes?.join(',')}`);
-    }
-
-    return data;
-  } catch (err) {
-    console.log(`  ⚠️ Token debug failed: ${err.message}`);
-    return { data: { is_valid: false } };
-  }
-}
-
-/**
- * Exchange short-lived token for long-lived token (60 days)
- * Or refresh an existing long-lived token
- */
-export async function refreshToken(shortLivedToken) {
-  const appId = process.env.FB_APP_ID;
-  const appSecret = process.env.FB_APP_SECRET;
-
-  if (!appId || !appSecret) {
-    console.log('  ⚠️ FB_APP_ID or FB_APP_SECRET not set, cannot auto-refresh');
-    console.log('  💡 Set these in .env to enable auto-refresh');
-    return shortLivedToken;
-  }
-
+async function refreshFacebookToken(currentToken, envKey, platformName, appId, appSecret) {
   try {
     const res = await fetch(
       `https://graph.facebook.com/v21.0/oauth/access_token?` +
       `grant_type=fb_exchange_token&` +
       `client_id=${appId}&` +
       `client_secret=${appSecret}&` +
-      `fb_exchange_token=${shortLivedToken}`
+      `fb_exchange_token=${currentToken}`
     );
 
     const data = await res.json();
 
     if (data.access_token) {
-      console.log('  ✅ Token refreshed successfully');
+      console.log(`  ✅ ${platformName} token refreshed (new 60-day token)`);
 
-      // Update .env file
-      await updateEnvFile('INSTAGRAM_ACCESS_TOKEN', data.access_token);
+      // Persist new token
+      await updateSecret(envKey, data.access_token);
 
-      // Update process.env
-      process.env.INSTAGRAM_ACCESS_TOKEN = data.access_token;
+      // Update in-memory for current run
+      process.env[envKey] = data.access_token;
 
       return data.access_token;
-    } else {
-      console.log('  ❌ Token refresh failed:', data.error?.message);
-      return shortLivedToken;
     }
+
+    // Refresh failed
+    const errMsg = data.error?.message || 'Unknown error';
+    console.log(`  ❌ ${platformName} token refresh failed: ${errMsg}`);
+
+    // If the error is about invalid token, we can't refresh
+    if (data.error?.code === 190) {
+      throw new Error(
+        `${platformName} token refresh failed: ${errMsg}\n` +
+        `  Token may be revoked. Generate new one manually.`
+      );
+    }
+
+    // Other errors — return current token and hope for the best
+    return currentToken;
   } catch (err) {
-    console.log('  ❌ Token refresh error:', err.message);
-    return shortLivedToken;
+    if (err.message.includes('revoked')) throw err;
+    console.log(`  ❌ ${platformName} token refresh error: ${err.message}`);
+    return currentToken;
   }
 }
 
 /**
- * Update a value in .env file
+ * Debug/inspect a Facebook access token
+ * Uses app access token (app_id|app_secret) for debug API
+ */
+async function debugFacebookToken(token, appId, appSecret) {
+  try {
+    const appToken = `${appId}|${appSecret}`;
+
+    const res = await fetch(
+      `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${appToken}`
+    );
+
+    return await res.json();
+  } catch (err) {
+    console.log(`  ⚠️ Token debug failed: ${err.message}`);
+    return { data: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Secret persistence — GitHub Secrets (CI) or .env (local)
+// ---------------------------------------------------------------------------
+
+/**
+ * Update a secret/token — detects environment and persists accordingly
+ */
+async function updateSecret(key, value) {
+  if (IS_CI) {
+    await updateGitHubSecret(key, value);
+  } else {
+    await updateEnvFile(key, value);
+  }
+}
+
+/**
+ * Update GitHub Secret via gh CLI (requires GITHUB_TOKEN with secrets write)
+ */
+async function updateGitHubSecret(key, value) {
+  try {
+    await execFileAsync('gh', ['secret', 'set', key, '--body', value], {
+      env: { ...process.env },
+      timeout: 15000,
+    });
+    console.log(`  🔐 GitHub Secret updated: ${key}`);
+  } catch (err) {
+    console.log(`  ⚠️ Failed to update GitHub Secret ${key}: ${err.message}`);
+    console.log(`  💡 Ensure GITHUB_TOKEN has 'secrets' write permission`);
+  }
+}
+
+/**
+ * Update a value in local .env file
  */
 async function updateEnvFile(key, value) {
   try {
@@ -147,6 +280,44 @@ async function updateEnvFile(key, value) {
     await writeFile(ENV_PATH, content);
     console.log(`  💾 Updated .env: ${key}`);
   } catch (err) {
-    console.log(`  ⚠️ Failed to update .env: ${err.message}`);
+    console.log(`  ⚠️ Failed to update .env ${key}: ${err.message}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled token health check — call from cron workflow
+// ---------------------------------------------------------------------------
+
+/**
+ * Check and refresh ALL platform tokens
+ * Returns status report for each platform
+ */
+export async function checkAllTokens() {
+  const report = {};
+
+  // Instagram
+  try {
+    await getValidInstagramToken();
+    report.instagram = { status: 'ok' };
+  } catch (err) {
+    report.instagram = { status: 'error', message: err.message };
+  }
+
+  // Threads
+  try {
+    await getValidThreadsToken();
+    report.threads = { status: 'ok' };
+  } catch (err) {
+    report.threads = { status: 'error', message: err.message };
+  }
+
+  // YouTube
+  try {
+    await getValidYouTubeToken();
+    report.youtube = { status: 'ok' };
+  } catch (err) {
+    report.youtube = { status: 'error', message: err.message };
+  }
+
+  return report;
 }

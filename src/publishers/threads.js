@@ -3,6 +3,7 @@
 // Uses dedicated Threads app credentials (separate from Instagram)
 import { config } from '../utils/config.js';
 import { withRetry } from '../utils/retry.js';
+import { getValidThreadsToken } from '../utils/token-manager.js';
 
 const THREADS_API = 'https://graph.threads.net/v1.0';
 
@@ -13,7 +14,8 @@ const THREADS_API = 'https://graph.threads.net/v1.0';
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToThreads(text) {
-  const { accessToken, userId } = config.platforms.threads;
+  const { userId } = config.platforms.threads;
+  const accessToken = await getValidThreadsToken();
 
   if (!accessToken || !userId) {
     console.log('  ⚠️ Threads API not configured. Set THREADS_ACCESS_TOKEN and THREADS_USER_ID in .env');
@@ -46,7 +48,8 @@ export async function publishToThreads(text) {
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToThreadsWithImage(imageUrl, text) {
-  const { accessToken, userId } = config.platforms.threads;
+  const { userId } = config.platforms.threads;
+  const accessToken = await getValidThreadsToken();
 
   if (!accessToken || !userId) {
     console.log('  ⚠️ Threads API not configured.');

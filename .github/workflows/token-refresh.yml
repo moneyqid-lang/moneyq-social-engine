@@ -1,0 +1,59 @@
+name: Token Health Check & Auto-Refresh
+
+on:
+  schedule:
+    # Run daily at 02:00 WIB (19:00 UTC previous day)
+    # Refreshes tokens before they expire
+    - cron: '0 19 * * *'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  check-and-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check & refresh all tokens
+        env:
+          # Facebook/Instagram/Threads
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          # YouTube
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          # GitHub token for updating secrets
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e "
+            import { checkAllTokens } from './src/utils/token-manager.js';
+
+            const report = await checkAllTokens();
+
+            console.log('\n📊 Token Health Report:');
+            console.log(JSON.stringify(report, null, 2));
+
+            const errors = Object.entries(report).filter(([, v]) => v.status === 'error');
+            if (errors.length > 0) {
+              console.log('\n⚠️ Tokens needing attention:');
+              errors.forEach(([platform, info]) => {
+                console.log('  - ' + platform + ': ' + info.message);
+              });
+              // Don't fail the workflow — just report
+            } else {
+              console.log('\n✅ All tokens healthy!');
+            }
+          "
