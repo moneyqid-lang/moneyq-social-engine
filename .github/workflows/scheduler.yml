@@ -80,14 +80,12 @@ jobs:
 
           # YouTube: 04:00 UTC (11 WIB) atau 10:00 UTC (17 WIB)
           if [ "$HOUR" = "04" ] || [ "$HOUR" = "10" ]; then
-            # Jam 10:00 UTC = YouTube only (17 WIB)
-            # Jam 04:00 UTC = YouTube only (11 WIB)
             echo "platforms=youtube" >> $GITHUB_OUTPUT
             echo "📋 YouTube slot (UTC $CURRENT_UTC)"
           else
-            # Semua jam lain = Instagram + Threads
-            echo "platforms=instagram,threads" >> $GITHUB_OUTPUT
-            echo "📋 IG+Threads slot (UTC $CURRENT_UTC)"
+            # Instagram only (Threads API belum aktif — perlu app approval)
+            echo "platforms=instagram" >> $GITHUB_OUTPUT
+            echo "📋 Instagram slot (UTC $CURRENT_UTC)"
           fi
 
       - name: Run Social Engine
