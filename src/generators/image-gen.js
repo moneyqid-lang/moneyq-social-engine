@@ -7,6 +7,92 @@ import { join } from 'node:path';
 
 const OUTPUT_DIR = join(process.cwd(), 'output', 'images');
 
+// Gemini image generation models (in order of preference)
+const GEMINI_IMAGE_MODELS = [
+  'gemini-2.5-flash-image',
+  'gemini-3-pro-image',
+  'gemini-3.1-flash-image',
+];
+
+// Pillar-specific image prompts for AI generation
+const AI_IMAGE_PROMPTS = {
+  tips_hemat: (topic) =>
+    `A modern, minimal financial illustration about saving money. ${topic}. Dark blue gradient background (#0f1628), teal accent (#06B5A5), clean professional style. Square 1:1 format. No text.`,
+  edukasi_siklus: (topic) =>
+    `An educational financial illustration. ${topic}. Clean design with dark background, soft lighting, professional. Square 1:1 format. No text.`,
+  fakta_finansial: (topic) =>
+    `A striking financial data visualization illustration. ${topic}. Dark dramatic background with yellow (#FFD166) and teal (#06B5A5) accents. Bold, eye-catching. Square 1:1. No text.`,
+  before_after: (topic) =>
+    `A transformation illustration showing financial improvement. ${topic}. Split composition, dark background, green (#22C55E) accent for positive change. Square 1:1. No text.`,
+  challenge: (topic) =>
+    `An energetic challenge illustration about finance. ${topic}. Dynamic composition, dark background, orange (#FF8C42) and teal accents. Square 1:1. No text.`,
+  mentor_wise: (topic) =>
+    `A wise mentorship illustration about finance. ${topic}. Calm, sophisticated, dark background with warm golden tones. Square 1:1. No text.`,
+  feature_deep_dive: (topic) =>
+    `A detailed product feature illustration for fintech. ${topic}. Modern, tech-forward, dark background with teal glow. Square 1:1. No text.`,
+};
+
+/**
+ * Generate AI image using Gemini API
+ * Returns buffer or null if failed
+ */
+async function generateAIImage(copy, topic) {
+  const apiKey = config.gemini?.apiKey;
+  if (!apiKey) return null;
+
+  const pillar = topic?.pillar || 'tips_hemat';
+  const promptFn = AI_IMAGE_PROMPTS[pillar] || AI_IMAGE_PROMPTS.tips_hemat;
+  const topicText = topic?.topic || copy.hook?.slice(0, 80) || 'personal finance';
+  const prompt = promptFn(topicText);
+
+  for (const model of GEMINI_IMAGE_MODELS) {
+    try {
+      console.log(`  🤖 Trying Gemini image: ${model}...`);
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseModalities: ['TEXT', 'IMAGE'],
+            },
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (data.error) {
+        const msg = data.error.message || '';
+        if (msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          console.log(`  ⚠️ ${model}: quota exceeded`);
+          continue; // Try next model
+        }
+        console.log(`  ⚠️ ${model}: ${msg.slice(0, 80)}`);
+        continue;
+      }
+
+      // Extract image from response
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          const buffer = Buffer.from(part.inlineData.data, 'base64');
+          console.log(`  ✅ AI image generated via ${model} (${buffer.length} bytes)`);
+          return buffer;
+        }
+      }
+
+      console.log(`  ⚠️ ${model}: no image in response`);
+    } catch (err) {
+      console.log(`  ⚠️ ${model}: ${err.message}`);
+    }
+  }
+
+  return null;
+}
+
 /**
  * Convert emoji character to PNG buffer using Twemoji CDN
  * @param {string} emoji - Emoji character (e.g., '💡')
@@ -126,12 +212,52 @@ const PILLAR_CONFIG = {
 
 /**
  * Generate an Instagram-ready image with variety.
+ * Priority: AI (Gemini) → SVG templates → fallback
  */
 export async function generateImage(copy, topic) {
   await mkdir(OUTPUT_DIR, { recursive: true });
 
   const pillar = topic?.pillar || 'tips_hemat';
   const pillarConfig = PILLAR_CONFIG[pillar] || PILLAR_CONFIG.tips_hemat;
+
+  // --- Tier 1: AI Image Generation (Gemini) ---
+  let imageBuffer;
+  try {
+    imageBuffer = await generateAIImage(copy, topic);
+    if (imageBuffer) {
+      // Overlay text on AI-generated image
+      const finalBuffer = await overlayText(imageBuffer, copy.hook, {
+        colors: ['#06B5A5', '#049F91', '#038A7E'],
+        bg: ['#0f172a', '#1e293b', '#0d2b3e'],
+        accent: '#FFD166',
+        emojis: pillarConfig.emojis,
+      }, 'ai_generated');
+
+      const pillarSlug = (pillar || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `moneyq-ai-${pillarSlug}-${Date.now()}.jpg`;
+      const localPath = join(OUTPUT_DIR, filename);
+      await writeFile(localPath, finalBuffer);
+
+      // Upload to Supabase
+      const storagePath = `social-media/${filename}`;
+      const { error: uploadError } = await supabase.storage.from('content')
+        .upload(storagePath, finalBuffer, { contentType: 'image/jpeg', upsert: false });
+
+      if (uploadError) {
+        console.log(`  ⚠️ Supabase upload failed: ${uploadError.message}, using local path`);
+        return { imagePath: localPath, imageUrl: null };
+      }
+
+      const { data: urlData } = supabase.storage.from('content').getPublicUrl(storagePath);
+      console.log(`  ✅ AI image saved: ${localPath}`);
+      return { imagePath: localPath, imageUrl: urlData.publicUrl };
+    }
+  } catch (err) {
+    console.log(`  ⚠️ AI image failed: ${err.message}, falling back to SVG`);
+  }
+
+  // --- Tier 2: SVG Templates (current system) ---
+
 
   // Randomly select color palette (varied colors each time)
   const colorPalette = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
@@ -550,6 +676,9 @@ async function overlayText(imageBuffer, hookText, style, contentStyle) {
       break;
     case 'data_visual':
       textYStart = 850; // Below the data
+      break;
+    case 'ai_generated':
+      textYStart = 750; // Bottom area for AI images
       break;
     default:
       textYStart = 540; // Center
