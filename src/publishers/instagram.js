@@ -1,6 +1,7 @@
 // moneyq-social-engine/src/publishers/instagram.js
 import { config } from '../utils/config.js';
 import { withRetry } from '../utils/retry.js';
+import { getValidInstagramToken } from '../utils/token-manager.js';
 
 const IG_API_BASE = 'https://graph.facebook.com/v20.0';
 
@@ -13,7 +14,8 @@ const IG_API_BASE = 'https://graph.facebook.com/v20.0';
  * @returns {Promise<{postId: string, permalink: string}>}
  */
 export async function publishToInstagram(imageUrl, caption) {
-  const { accessToken, accountId } = config.platforms.instagram;
+  const { accountId } = config.platforms.instagram;
+  const accessToken = await getValidInstagramToken();
 
   if (!imageUrl) throw new Error('Image URL is required for Instagram publishing');
 
@@ -47,8 +49,22 @@ async function createMediaContainer(imageUrl, caption, accessToken, accountId) {
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(`IG media creation failed: ${err.error?.message || res.status}`);
+      const err = await res.json().catch(() => ({}));
+      const errMsg = err.error?.message || `HTTP ${res.status}`;
+      const errCode = err.error?.code;
+
+      // Specific error handling
+      if (errCode === 190 || errMsg.includes('access token')) {
+        throw new Error(`IG token invalid/expired. Refresh: curl -X GET "https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=FB_APP_ID&client_secret=FB_APP_SECRET&fb_exchange_token=${accessToken.slice(0,10)}..."`);
+      }
+      if (errMsg.includes('blocked') || errCode === 10) {
+        throw new Error(`IG API access blocked — token mungkin expired atau app perlu re-authorization. Cek: https://developers.facebook.com/tools/debug/accesstoken/`);
+      }
+      if (errMsg.includes('url') || errMsg.includes('image')) {
+        throw new Error(`IG image URL invalid: ${imageUrl}. Pastikan URL bisa diakses publik (HTTPS).`);
+      }
+
+      throw new Error(`IG media creation failed: ${errMsg}`);
     }
 
     return res.json();
