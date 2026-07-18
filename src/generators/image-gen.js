@@ -273,8 +273,6 @@ export async function generateImage(copy, topic) {
   const selectedStyle = CONTENT_STYLES[Math.floor(Math.random() * CONTENT_STYLES.length)];
   console.log(`  🎨 Style: ${selectedStyle} | Colors: ${colorPalette.colors[0]}`);
 
-  let imageBuffer;
-
   // Generate based on selected style
   try {
     switch (selectedStyle) {
