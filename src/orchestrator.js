@@ -85,7 +85,14 @@ export async function run(dateStr, targetPlatforms) {
       }
 
       // --- Step 4: Generate media ---
-      const publishContent = `${copy.body}\n\n${copy.hashtags.map(h => '#' + h).join(' ')}`;
+      // Assemble full caption: hook → body → followUpQuestion → CTA → hashtags
+      const captionParts = [];
+      if (copy.hook) captionParts.push(copy.hook);
+      if (copy.body) captionParts.push(copy.body);
+      if (copy.followUpQuestion) captionParts.push(`\n${copy.followUpQuestion}`);
+      if (copy.cta) captionParts.push(`\n${copy.cta}`);
+      captionParts.push(`\n${copy.hashtags.map(h => '#' + h).join(' ')}`);
+      const publishContent = captionParts.join('\n\n');
       let mediaUrls = [];
       let result;
 

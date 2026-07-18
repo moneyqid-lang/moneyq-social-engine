@@ -155,9 +155,19 @@ ATURAN WAJIB:
    - "Mulai atur uang lo di moneyq.id"
    - Jangan hard-sell atau spammy
 
-4. HASHTAGS:
+4. FOLLOW-UP QUESTION (WAJIB untuk Instagram):
+   - Pertanyaan di akhir caption yang mendorong orang berkomentar
+   - Harus relevan dengan topik konten
+   - Format: pertanyaan terbuka yang bikin orang mau sharing pengalaman
+   - Contoh:
+     "Lo termasuk yang mana? Nabung sisa gaji atau nabung dulu baru spend?"
+     "Berapa persen gaji lo yang masuk ke tabungan? Share di comment!"
+     "Pernah ngalamin hal yang sama? Cerita dong di bawah 👇"
+     "Menurut lo, budgeting yang realistis itu berapa hari? 7? 10? 14?"
+
+5. HASHTAGS:
    - Mix brand (#MoneyQ) + niche (#TipsHemat) + trending (#FinanceTok)
-   - 5-10 hashtag
+   - 5-15 hashtag
 
 TONALITAS:
 - Santai, relateable, kayak ngobrol sama temen
@@ -170,6 +180,7 @@ OUTPUT JSON (hanya JSON, tidak ada teks lain):
   "hook": "kalimat pembuka yang bikin orang berhenti scroll & mau komentar (max 100 char)",
   "body": "isi konten yang informatif (300-1500 char untuk instagram, boleh list/tips/storytelling; max 100 char untuk threads)",
   "cta": "ajakan soft-sell ke moneyq.id",
+  "followUpQuestion": "pertanyaan yang mendorong orang berkomentar, relevan dengan topik (WAJIB untuk instagram)",
   "hashtags": ["MoneyQ", "TipsHemat", "tag3"],
   "altText": "deskripsi gambar untuk aksesibilitas"
 }`;
@@ -204,7 +215,7 @@ async function callMistral(prompt) {
     body: JSON.stringify({
       model: 'mistral-small-latest',
       messages: [
-        { role: 'system', content: 'Kamu copywriter expert Indonesia untuk MoneyQ. Output JSON only. Caption Instagram harus panjang (300-1500 char), edukatif, dengan storytelling dan list tips.' },
+        { role: 'system', content: 'Kamu copywriter expert Indonesia untuk MoneyQ. Output JSON only. Caption Instagram harus panjang (300-1500 char), edukatif, dengan storytelling, list tips, dan followUpQuestion untuk engagement.' },
         { role: 'user', content: prompt },
       ],
       temperature: 0.9,
@@ -230,7 +241,7 @@ async function callDeepSeek(prompt) {
     body: JSON.stringify({
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: 'Kamu copywriter Indonesia untuk MoneyQ. Output JSON only.' },
+        { role: 'system', content: 'Kamu copywriter Indonesia untuk MoneyQ. Output JSON only. Sertakan followUpQuestion untuk engagement.' },
         { role: 'user', content: prompt },
       ],
       temperature: 0.9,
@@ -257,7 +268,7 @@ async function callClaude(prompt) {
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
-      system: 'Kamu copywriter Indonesia untuk MoneyQ. Output JSON only, no other text.',
+      system: 'Kamu copywriter Indonesia untuk MoneyQ. Output JSON only, no other text. Sertakan followUpQuestion untuk engagement.',
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -337,11 +348,13 @@ function parseAndValidate(raw, platform) {
   parsed.body = cleanTextField(normalizeField(parsed.body));
   parsed.hook = cleanTextField(normalizeField(parsed.hook));
   parsed.cta = cleanTextField(normalizeField(parsed.cta));
+  parsed.followUpQuestion = cleanTextField(normalizeField(parsed.followUpQuestion));
 
   // Ensure strings
   parsed.hook = String(parsed.hook || '');
   parsed.body = String(parsed.body || '');
   parsed.cta = String(parsed.cta || '');
+  parsed.followUpQuestion = String(parsed.followUpQuestion || '');
   parsed.altText = cleanTextField(String(parsed.altText || parsed.hook || ''));
 
   // Validate required fields
@@ -355,6 +368,11 @@ function parseAndValidate(raw, platform) {
   // CTA is optional — provide default if missing
   if (!parsed.cta || (typeof parsed.cta === 'string' && parsed.cta.trim().length === 0)) {
     parsed.cta = 'Cek moneyq.id untuk mulai atur keuanganmu 💚';
+  }
+
+  // FollowUpQuestion — provide default if missing (for engagement)
+  if (!parsed.followUpQuestion || (typeof parsed.followUpQuestion === 'string' && parsed.followUpQuestion.trim().length === 0)) {
+    parsed.followUpQuestion = 'Lo termasuk yang mana? Share pengalaman lo di comment 👇';
   }
 
   if (!Array.isArray(parsed.hashtags)) {
