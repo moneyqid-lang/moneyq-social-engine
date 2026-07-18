@@ -3,7 +3,7 @@ import { config } from '../utils/config.js';
 import { db } from '../db.js';
 
 const PLATFORM_LIMITS = {
-  instagram: { caption: 300, hashtags: 10 }, // singkat, hook-based
+  instagram: { caption: 2000, hashtags: 15 }, // long-form caption, storytelling + tips
   threads: { body: 150, hashtags: 5 }, // sangat singkat, kayak tweet
   tiktok: { caption: 2200, hashtags: 30 },
   youtube: { title: 100, description: 5000 },
@@ -86,14 +86,27 @@ export async function generateCopy(topic, platform) {
 
 function buildPrompt(topic, platform, template) {
   const platformContext = {
-    instagram: `Instagram post — PRIORITAS: hook kuat, singkat, bikin penasaran, pancing komentar.
-- Body MAKSIMAL 2-3 kalimat pendek (bukan paragraf panjang)
-- Format: hook → 1 fakta/tips singkat → CTA
-- JANGAN pakai list panjang, JANGAN paragraf texty
+    instagram: `Instagram post — hook kuat di baris pertama, lalu body yang edukatif & engaging.
+- Body 300-1500 karakter, bisa pakai list, storytelling, atau penjelasan mendalam
+- Format: hook → context/story → 3-5 tips/poin → CTA
+- Boleh pakai emoji sebagai bullet points
+- Sertakan data/angka biar credible
 - Contoh bagus:
-  "Gaji 8jt tapi saldo selalu 0 di tanggal 15? Lo bukan boros. Lo salah sistem."
-  "Coba hitung: kopi harian lo = Rp900rb/bulan. Itu udah bisa buat dana darurat."
-  "Yang gajiannya di atas 10jt, coba cek tabungan. Kalau masih nihil, baca ini."`,
+  "Gaji 8jt tapi saldo selalu 0 di tanggal 15? Lo bukan boros. Lo salah sistem.
+
+  Gue dulu juga gitu. Tiap gajian, langsung bayar ini-itu, sisa dikit, habis deh.
+
+  Ternyata masalahnya bukan di nominal gaji, tapi di cara kelola.
+
+  3 Kesalahan yang gue temuin:
+
+  1️⃣ Nabung sisa gaji (harusnya nabung DULU, baru spend)
+  2️⃣ Gak track pengeluaran kecil (kopi + snack = 500rb/bulan!)
+  3️⃣ Budget bulanan terlalu panjang (siklus 7-10 hari lebih realistis)
+
+  Gue mulai pake MoneyQ dan dalam 2 bulan, tabungan gue naik 3x lipat.
+
+  Coba gratis di moneyq.id 💚"`,
 
     threads: `Threads post — SANGAT SINGKAT, kayak tweet, bikin orang reply.
 - Body MAKSIMAL 1-2 kalimat pendek
@@ -130,12 +143,12 @@ ATURAN WAJIB:
    - Contoh: "87% orang Indonesia gak punya dana darurat. Lo termasuk?"
    - Contoh: "Gaji 8jt tapi saldo selalu 0 di tanggal 15..."
 
-2. BODY harus SINGKAT & TO THE POINT:
-   - Instagram: MAKSIMAL 2-3 kalimat pendek
+2. BODY harus INFORMATIF & ENGAGING:
+   - Instagram: 300-1500 karakter, boleh list, storytelling, data/angka
    - Threads: MAKSIMAL 1-2 kalimat pendek
-   - JANGAN paragraf panjang, JANGAN list panjang
-   - 1 fakta/tips yang impactful, langsung ke inti
-   - Potong sebelum selesai → bikin penasaran
+   - Instagram: pakai format hook → context → 3-5 poin/tips → CTA
+   - Sertakan emoji sebagai bullet points untuk readability
+   - Boleh cerita pengalaman, analogi, atau data yang relatable
 
 3. CTA harus SOFT-SELL & BIKIN PENASARAN:
    - "Coba gratis di moneyq.id"
@@ -155,7 +168,7 @@ TONALITAS:
 OUTPUT JSON (hanya JSON, tidak ada teks lain):
 {
   "hook": "kalimat pembuka yang bikin orang berhenti scroll & mau komentar (max 100 char)",
-  "body": "isi SINGKAT, maksimal 2-3 kalimat pendek (max 200 char untuk instagram, 100 char untuk threads)",
+  "body": "isi konten yang informatif (300-1500 char untuk instagram, boleh list/tips/storytelling; max 100 char untuk threads)",
   "cta": "ajakan soft-sell ke moneyq.id",
   "hashtags": ["MoneyQ", "TipsHemat", "tag3"],
   "altText": "deskripsi gambar untuk aksesibilitas"
@@ -191,7 +204,7 @@ async function callMistral(prompt) {
     body: JSON.stringify({
       model: 'mistral-small-latest',
       messages: [
-        { role: 'system', content: 'Kamu copywriter Indonesia untuk MoneyQ. Output JSON only, singkat dan padat.' },
+        { role: 'system', content: 'Kamu copywriter expert Indonesia untuk MoneyQ. Output JSON only. Caption Instagram harus panjang (300-1500 char), edukatif, dengan storytelling dan list tips.' },
         { role: 'user', content: prompt },
       ],
       temperature: 0.9,
@@ -391,11 +404,31 @@ function repairTruncatedJson(json) {
 function getDefaultTemplate(pillar, platform) {
   const templates = {
     tips_hemat: {
-      instagram: `Format Instagram:
-- Hook (baris 1): Pertanyaan provokatif atau statemen yang bikin berhenti scroll. Contoh: "Lo masih ngeluarin 50% gaji buat makan di luar? 😱"
-- Body: 3 tips hemat yang actionable, tiap tip 1-2 kalimat, pakai emoji bullet
+      instagram: `Format Instagram (300-1500 karakter):
+- Hook (baris 1): Pertanyaan provokatif atau statemen yang bikin berhenti scroll
+- Context: Cerita/analogi yang relate, kenapa topik ini penting
+- Body: 3-5 tips hemat yang actionable, tiap tip 1-2 kalimat, pakai emoji bullet
+- Penutup: Kesimpulan singkat + motivasi
 - CTA: Soft ajakan ke moneyq.id
-- Tone: Santai, kayak ngobrol sama temen`,
+- Tone: Santai, kayak ngobrol sama temen
+- Contoh:
+  "Lo masih ngeluarin 50% gaji buat makan di luar? 😱
+
+  Gue dulu juga gitu. Setiap gajian, makan enak terus. Tanggal 15 udah makan mi instan.
+
+  Ternyata, ada 5 kebocoran yang gue gak sadar:
+
+  1️⃣ Ngopi tiap hari (Rp30rb x 30 = Rp900rb/bulan!)
+  2️⃣ GrabFood pas lagi males masak (Rp50rb x 15 = Rp750rb)
+  3️⃣ Ngemil convenience store (Rp20rb x 20 = Rp400rb)
+  4️⃣ Makan weekend fancy (Rp150rb x 4 = Rp600rb)
+  5️⃣ Traktir temen (Rp100rb x 4 = Rp400rb)
+
+  Total: Rp3.050.000/bulan 😱
+
+  Setelah gue track pake MoneyQ, gue bisa potong 40% tanpa merasa kekurangan.
+
+  Coba gratis di moneyq.id 💚"`,
       threads: `Format Threads (500 char max):
 - Hook: 1 kalimat provokatif
 - Body: 3-5 poin pendek pakai emoji ✅
@@ -411,11 +444,35 @@ CTA ke moneyq.id"`,
       default: 'Buat konten tips hemat. Hook: pertanyaan provokatif. Body: 3 tips actionable. CTA: soft sell ke moneyq.id.'
     },
     edukasi_siklus: {
-      instagram: `Format Instagram:
+      instagram: `Format Instagram (300-1500 karakter):
 - Hook: Challenge asumsi umum tentang budgeting. Contoh: "Budget bulanan itu MITOS. Gue buktiin sendiri kenapa gagal terus."
+- Context: Kenapa budget bulanan sering gagal (cerita pengalaman/analogi)
 - Body: Jelaskan kenapa sistem siklus (7-10 hari) lebih realistis dari bulanan
-- Pakai analogi yang relate: "Kayak diet, kalau terlalu lama pasti nyerah"
-- CTA: Ajakan coba MoneyQ gratis`,
+  - Pakai analogi: "Kayak diet, kalau terlalu lama pasti nyerah"
+  - Beri contoh konkret perbandingan bulanan vs siklus
+  - Sertakan data/angka kalau bisa
+- Penutup: Kesimpulan + motivasi
+- CTA: Ajakan coba MoneyQ gratis
+- Contoh:
+  "Budget bulanan itu MITOS. Gue buktiin sendiri kenapa gagal terus.
+
+  Coba inget: berapa kali lo bikin budget di awal bulan, tapi pertengahan udah bobol?
+
+  Gue dulu gitu. Tiap bulan bikin plan, tiap bulan gagal. Kenapa?
+
+  Karena 30 hari itu TERLALU PANJANG buat otak lo bertahan disiplin.
+
+  Bayangin diet: lo disuruh jaga makan selama sebulan penuh. Pasti nyerah di minggu ke-2 kan?
+
+  Sama kayak budget. Sistem siklus 7-10 hari lebih realistis karena:
+  ✅ Lebih pendek = lebih mudah konsisten
+  ✅ Bisa evaluasi lebih cepat
+  ✅ Gak ada "ah masih ada waktu" mentality
+  ✅ Cocok sama payroll freelance/gig economy
+
+  Gue mulai pake MoneyQ (gratis) dan dalam 3 siklus pertama, tabungan gue naik 40%.
+
+  Coba di moneyq.id 💚"`,
       threads: `Format Threads (500 char max):
 - Hook: "Budget bulanan = diet yang pasti gagal. Kenapa?"
 - Body: 3 alasan kenapa siklus lebih baik
@@ -424,10 +481,14 @@ CTA ke moneyq.id"`,
       default: 'Jelaskan kenapa sistem siklus lebih baik dari budgeting bulanan. Hook: challenge asumsi umum.'
     },
     fakta_finansial: {
-      instagram: `Format Instagram:
+      instagram: `Format Instagram (300-1500 karakter):
 - Hook: Statistik mengejutkan. Contoh: "87% orang Indonesia gak punya dana darurat. Lo termasuk?"
-- Body: Jelaskan fakta + dampaknya + solusi
-- Sertakan angka/data biar credible
+- Context: Kenapa fakta ini penting & dampaknya ke kehidupan sehari-hari
+- Body: Jelaskan fakta lebih detail + data pendukung + solusi actionable
+  - Sertakan angka/data biar credible
+  - Breakdown jadi poin-poin yang mudah dicerna
+  - Beri contoh konkret
+- Penutup: Refleksi + motivasi
 - CTA: Ajakan ke moneyq.id untuk solusi`,
       threads: `Format Threads (500 char max):
 - Hook: Fakta + emoji 🚨
@@ -436,10 +497,15 @@ CTA ke moneyq.id"`,
       default: 'Buka dengan statistik mengejutkan tentang keuangan orang Indonesia. Body: jelaskan dampak + solusi.'
     },
     before_after: {
-      instagram: `Format Instagram:
+      instagram: `Format Instagram (300-1500 karakter):
 - Hook: Pain point yang relatable. Contoh: "Gaji 8jt tapi saldo selalu 0 di tanggal 15..."
-- Body: Ceritakan transformasi: BEFORE (masalah) → AFTER (solusi MoneyQ)
-- Pakai storytelling, emosional
+- BEFORE: Ceritakan kondisi sebelumnya dengan detail emosional
+  - Apa yang dirasakan?
+  - Apa yang salah?
+  - Berapa lama terjebak?
+- TRANSITION: Titik balik, apa yang berubah
+- AFTER: Hasil setelah perubahan (dengan data/angka kalau bisa)
+- Body: Ceritakan transformasi lengkap, emosional, relatable
 - CTA: Ajakan coba MoneyQ`,
       threads: `Format Threads (500 char max):
 - Format: "Sebelum vs Sesudah"
@@ -449,10 +515,14 @@ CTA ke moneyq.id"`,
       default: 'Ceritakan transformasi dari kondisi keuangan buruk ke baik. Hook: relatable pain point.'
     },
     challenge: {
-      instagram: `Format Instagram:
+      instagram: `Format Instagram (300-1500 karakter):
 - Hook: Tantangan playful. Contoh: "CHALLENGE: Gak jajan selama 7 hari. Berani?"
-- Body: Rules challenge + benefit + deadline
-- Ajak audience ikut serta
+- Context: Kenapa challenge ini penting & apa benefitnya
+- Body: Rules challenge yang jelas + benefit + deadline
+  - Breakdown rules jadi poin-poin
+  - Beri tips untuk sukses
+  - Sertakan reward/motivasi
+- Ajak audience ikut serta + tag temen
 - CTA: "Tag temen lo yang perlu ikutan!"`,
       threads: `Format Threads (500 char max):
 - Hook: "🚨 CHALLENGE: [nama challenge]"
@@ -462,10 +532,15 @@ CTA ke moneyq.id"`,
       default: 'Buat challenge seru seputar hemat/keuangan. Hook: tantang pembaca dengan nada playful.'
     },
     behind_product: {
-      instagram: `Format Instagram:
+      instagram: `Format Instagram (300-1500 karakter):
 - Hook: "Pernah ngalamin [pain point]? Gue juga dulu gitu."
-- Body: Jelaskan fitur MoneyQ sebagai solusi (Recovery Plan / Mentor Wise / Sheets Sync)
-- Fokus ke benefit, bukan fitur teknis
+- Context: Ceritakan pain point dengan detail emosional
+- Body: Jelaskan fitur MoneyQ sebagai solusi
+  - Recovery Plan: untuk yang terlilit utang
+  - Mentor Wise: konsultasi keuangan
+  - Sheets Sync: auto-sync ke Google Sheets
+  - Fokus ke benefit, bukan fitur teknis
+  - Beri contoh penggunaan nyata
 - CTA: "Coba gratis di moneyq.id"`,
       threads: `Format Threads (500 char max):
 - Hook: Pain point dalam 1 kalimat
