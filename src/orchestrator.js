@@ -92,7 +92,13 @@ export async function run(dateStr, targetPlatforms) {
       if (copy.followUpQuestion) captionParts.push(`\n${copy.followUpQuestion}`);
       if (copy.cta) captionParts.push(`\n${copy.cta}`);
       captionParts.push(`\n${copy.hashtags.map(h => '#' + h).join(' ')}`);
-      const publishContent = captionParts.join('\n\n');
+      let publishContent = captionParts.join('\n\n');
+
+      // Instagram: truncate to 450 chars if needed
+      if (platform === 'instagram' && publishContent.length > 450) {
+        console.log(`  ⚠️ Caption ${publishContent.length} chars, truncating to 450...`);
+        publishContent = publishContent.slice(0, 447) + '...';
+      }
       let mediaUrls = [];
       let result;
 
